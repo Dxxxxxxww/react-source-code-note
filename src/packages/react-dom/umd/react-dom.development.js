@@ -18596,6 +18596,7 @@
       } // Handle object types
 
       if (typeof newChild === 'object' && newChild !== null) {
+        // newChild 是对象，也就是只有一个子节点
         switch (newChild.$$typeof) {
           case REACT_ELEMENT_TYPE:
             return placeSingleChild(
@@ -18629,7 +18630,7 @@
             )
           }
         }
-
+        // newChild 是数组，多个子节点
         if (isArray(newChild)) {
           return reconcileChildrenArray(
             returnFiber,
@@ -24195,7 +24196,7 @@
     // 所以其实 useImperativeHandle 的作用就是改变 ref 引用
 
     markRef$1(current, workInProgress)
-    reconcileChildre || n(current, workInProgress, nextChildren, renderLanes)
+    reconcileChildren(current, workInProgress, nextChildren, renderLanes)
     return workInProgress.child
   }
 
@@ -24483,7 +24484,7 @@
         }
       }
     }
-
+      // 判断是类组件还是函数组件
     if (
       // Run these checks in production only if the flag is off.
       // Eventually we'll delete this branch altogether.
@@ -24510,7 +24511,7 @@
           didWarnAboutModulePatternComponent[_componentName2] = true
         }
       } // Proceed under the assumption that this is a class instance
-
+      // 打上类组件标记 
       workInProgress.tag = ClassComponent // Throw out any hooks that were used.
 
       workInProgress.memoizedState = null
@@ -24542,6 +24543,7 @@
       )
     } else {
       // Proceed under the assumption that this is a function component
+      // 打上函数组件标记
       workInProgress.tag = FunctionComponent
 
       {
@@ -29729,6 +29731,7 @@
   // root has work on. This function is called on every update, and right before
   // exiting a task.
 
+  // schedule 任务，每个并发任务的入口
   function ensureRootIsScheduled(root, currentTime) {
     var existingCallbackNode = root.callbackNode // Check if any lanes are being starved by other work. If so, mark them as
     // expired so we know to work on those next.
@@ -29863,6 +29866,7 @@
     }
 
     root.callbackPriority = newCallbackPriority
+    // 把返回的 task 对象挂到 root 上
     root.callbackNode = newCallbackNode
   } // This is the entry point for every concurrent task, i.e. anything that
   // goes through Scheduler.
@@ -29915,6 +29919,8 @@
       !includesBlockingLane(root, lanes) &&
       !includesExpiredLane(root, lanes) &&
       !didTimeout
+
+      // 执行 render
     var exitStatus = shouldTimeSlice
       ? renderRootConcurrent(root, lanes)
       : renderRootSync(root, lanes)
