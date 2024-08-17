@@ -6,3 +6,5 @@ dist-ssr
 *.local
 .history
 local_test
+.idea/
+.vscode/

@@ -3006,7 +3006,7 @@
   var currentTask = null
   // 当前执行的任务优先级
   var currentPriorityLevel = NormalPriority // This is set while performing work, to prevent re-entrance.
-  // 是否在执行 flushWork 
+    // 是否在执行 flushWork
   var isPerformingWork = false
   // 是否有任务在调度标志
   var isHostCallbackScheduled = false
@@ -3110,8 +3110,10 @@
         return workLoop(hasTimeRemaining, initialTime)
       }
     } finally {
+      // 将当前执行任务的全局变量引用置为 null
       currentTask = null
       currentPriorityLevel = previousPriorityLevel
+      // 将 flushWork 执行标志置为 false
       isPerformingWork = false
     }
   }
@@ -3120,10 +3122,12 @@
     var currentTime = initialTime
     // 遍历延时任务队列，取出到期的任务放入普通任务队列中
     advanceTimers(currentTime)
+    // 从普通任务队列中取出任务
     currentTask = peek(taskQueue)
 
-    // 如果任务还没过期并且 shouldYieldToHost 打断了，就不执行，否则就从普通任务队列中拿到堆顶任务执行。
     while (currentTask !== null && !enableSchedulerDebugging) {
+      // 不执行任务的 case： 任务还没过期 或者 被 shouldYieldToHost 打断了
+      // 否则就从普通任务队列中拿到堆顶任务执行。
       if (
         currentTask.expirationTime > currentTime &&
         (!hasTimeRemaining || shouldYieldToHost())
@@ -3134,6 +3138,7 @@
 
       var callback = currentTask.callback
 
+      // 判断任务是否已经被执行或者取消
       if (typeof callback === 'function') {
         currentTask.callback = null
         currentPriorityLevel = currentTask.priorityLevel
@@ -3253,7 +3258,7 @@
    * @param {*} priorityLevel 优先级
    * @param {*} callback 任务函数
    * @param {*} options 选项，可以设置延迟
-   * @returns 
+   * @returns
    */
   function unstable_scheduleCallback(priorityLevel, callback, options) {
     // 获取当前时间
@@ -3384,7 +3389,7 @@
     return currentPriorityLevel
   }
 
-  // 是否有宏任务在执行的标记，只在 requestHostCallback 中置为 true，也就是发起宏任务 messageChannel 通知的时候
+  // 是否有任务在调度的标记，只在 requestHostCallback 中置为 true，也就是发起宏任务 messageChannel 通知的时候
   var isMessageLoopRunning = false
   var scheduledHostCallback = null
   var taskTimeoutID = -1 // Scheduler periodically yields in case there is other work on the main
@@ -3467,6 +3472,7 @@
     } // Yielding to the browser will give it a chance to paint, so we can
   }
 
+  // messageChannel postMessage
   var schedulePerformWorkUntilDeadline
 
   if (typeof localSetImmediate === 'function') {
