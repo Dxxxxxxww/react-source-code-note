@@ -3118,6 +3118,12 @@
     }
   }
 
+  /**
+   * @desc 任务调度的核心，当执行到 workLoop 时意味着已经是在下一个宏任务了。在不超时的情况下批处理任务
+   * @param hasTimeRemaining
+   * @param initialTime
+   * @returns {boolean}
+   */
   function workLoop(hasTimeRemaining, initialTime) {
     var currentTime = initialTime
     // 遍历延时任务队列，取出到期的任务放入普通任务队列中
@@ -3125,6 +3131,7 @@
     // 从普通任务队列中取出任务
     currentTask = peek(taskQueue)
 
+    // 在一个时间切片中批量执行任务，执行完一个任务如果还有时间剩余，则继续取出任务执行
     while (currentTask !== null && !enableSchedulerDebugging) {
       // 不执行任务的 case： 任务还没过期 或者 被 shouldYieldToHost 打断了
       // 否则就从普通任务队列中拿到堆顶任务执行。
@@ -3145,6 +3152,8 @@
         var didUserCallbackTimeout = currentTask.expirationTime <= currentTime
         // 执行，如果打断了会返回一个函数，等待下次继续执行，
         // 并且这个任务节点不会从堆中删除
+        // 这其实就要求用户在面对大任务时，把大任务拆分成多个小任务执行，让小任务在单个时间切片中执行，没执行完就返回函数，等待下次执行
+        // fiber 并发就是通过 shouldYield 把大任务拆分成小任务执行。详见 react-dom/performConcurrentWorkOnRoot 函数
         var continuationCallback = callback(didUserCallbackTimeout)
         currentTime = getCurrentTime()
 
@@ -3316,6 +3325,7 @@
       expirationTime: expirationTime,
       // 最小堆中优先对比的 key，值越小，越靠前。
       // 也可以根据 sortIndex 与 startTime，expirationTime 是否相等判断是否是延时任务
+      // 用时间来进行对比，防止饥饿问题。因为随着时间推移，即使再低优先级的任务，优先级都会变高
       sortIndex: -1,
     }
     // 延时任务放入延时任务队列，延时任务到期后会取出放入普通任务队列
@@ -3353,7 +3363,7 @@
       if (!isHostCallbackScheduled && !isPerformingWork) {
         isHostCallbackScheduled = true
         // flushWork 赋值给 scheduledHostCallback，也就是在之后要执行的函数
-        // scheduledHostCallback === flushWork -> wookLoop
+        // scheduledHostCallback === flushWork -> workLoop
         requestHostCallback(flushWork)
       }
     }
