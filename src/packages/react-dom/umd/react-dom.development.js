@@ -7243,23 +7243,28 @@
   function isEnabled() {
     return _enabled
   }
+  /**
+   * @desc 根据事件类型不同，创建不同优先级的事件
+   */
   function createEventListenerWrapperWithPriority(
     targetContainer,
     domEventName,
     eventSystemFlags
   ) {
+    // 获取事件优先级
     var eventPriority = getEventPriority(domEventName)
     var listenerWrapper
 
     switch (eventPriority) {
+      // 离散事件，优先级最高，例如 click input change 事件
       case DiscreteEventPriority:
         listenerWrapper = dispatchDiscreteEvent
         break
-
+      // 持续性事件，优先级次之，例如 scroll drag mousemove
       case ContinuousEventPriority:
         listenerWrapper = dispatchContinuousEvent
         break
-
+      // 默认事件，优先级最低，例如 error
       case DefaultEventPriority:
       default:
         listenerWrapper = dispatchEvent
@@ -10366,6 +10371,7 @@
       listenerSet.add(listenerSetKey)
     }
   }
+
   function listenToNativeEvent(domEventName, isCapturePhaseListener, target) {
     {
       if (nonDelegatedEvents.has(domEventName) && !isCapturePhaseListener) {
@@ -10383,6 +10389,7 @@
       eventSystemFlags |= IS_CAPTURE_PHASE
     }
 
+    // 真正绑定事件的地方
     addTrappedEventListener(
       target,
       domEventName,
@@ -10391,6 +10398,10 @@
     )
   } // This is only used by createEventHandle when the
   var listeningMarker = '_reactListening' + Math.random().toString(36).slice(2)
+  
+  /**
+   * @desc 在 app 节点上绑定所有事件，捕获阶段和冒泡阶段都绑定
+   */
   function listenToAllSupportedEvents(rootContainerElement) {
     if (!rootContainerElement[listeningMarker]) {
       rootContainerElement[listeningMarker] = true
@@ -10399,9 +10410,10 @@
         // doesn't bubble and needs to be on the document.
         if (domEventName !== 'selectionchange') {
           if (!nonDelegatedEvents.has(domEventName)) {
+            // 冒泡阶段注册事件
             listenToNativeEvent(domEventName, false, rootContainerElement)
           }
-
+          // 捕获阶段注册事件
           listenToNativeEvent(domEventName, true, rootContainerElement)
         }
       })
@@ -10421,6 +10433,9 @@
     }
   }
 
+  /**
+   * @description 根据事件类型不同来划分不同优先级的事件并绑定
+   */
   function addTrappedEventListener(
     targetContainer,
     domEventName,
@@ -10428,6 +10443,7 @@
     isCapturePhaseListener,
     isDeferredListenerForLegacyFBSupport
   ) {
+    // 创建不同优先级的事件
     var listener = createEventListenerWrapperWithPriority(
       targetContainer,
       domEventName,
@@ -10455,7 +10471,7 @@
 
     targetContainer = targetContainer
     var unsubscribeListener // When legacyFBSupport is enabled, it's for when we
-
+    // 绑定事件，捕获
     if (isCapturePhaseListener) {
       if (isPassiveListener !== undefined) {
         unsubscribeListener = addEventCaptureListenerWithPassiveFlag(
@@ -10472,6 +10488,7 @@
         )
       }
     } else {
+      // 绑定事件，冒泡
       if (isPassiveListener !== undefined) {
         unsubscribeListener = addEventBubbleListenerWithPassiveFlag(
           targetContainer,
@@ -33739,6 +33756,7 @@
     markContainerAsRoot(root.current, container)
     var rootContainerElement =
       container.nodeType === COMMENT_NODE ? container.parentNode : container
+    // 给 app 节点绑定所有事件
     listenToAllSupportedEvents(rootContainerElement) // TODO: Delete this path
 
     if (mutableSources) {
