@@ -29414,6 +29414,7 @@
   var RetryAfterError =
     /*       */
     8
+  // 渲染并没有结束，超时打断了的标记
   var RootIncomplete = 0
   var RootFatalErrored = 1
   var RootErrored = 2
@@ -29937,11 +29938,12 @@
       !includesExpiredLane(root, lanes) &&
       !didTimeout
 
-      // 执行 render
+      // 执行 render，如果渲染没执行完，而是超时被打断了，会返回 RootIncomplete 0
     var exitStatus = shouldTimeSlice
       ? renderRootConcurrent(root, lanes)
       : renderRootSync(root, lanes)
 
+    // 渲染错误case
     if (exitStatus !== RootIncomplete) {
       if (exitStatus === RootErrored) {
         // If something threw an error, try rendering one more time. We'll
@@ -30006,12 +30008,15 @@
 
     ensureRootIsScheduled(root, now())
 
+    // 如果渲染没有结束，此时的 currentTask 对象相同，则返回 fiber 转化函数，继续 fiber 转化
+    // 这里的对象是怎么相等的？需要debugger一下
     if (root.callbackNode === originalCallbackNode) {
       // The task node scheduled for this root is the same one that's
       // currently executed. Need to return a continuation.
       return performConcurrentWorkOnRoot.bind(null, root)
     }
 
+    // 渲染完成会返回 null
     return null
   }
 
@@ -30730,7 +30735,7 @@
     popDispatcher(prevDispatcher)
     executionContext = prevExecutionContext
 
-    // 标记此时渲染并没有结束，而是被高优先级打断了
+    // 标记此时渲染并没有结束，而是被高优先级打断了，返回 RootIncomplete 0
     if (workInProgress !== null) {
       // Still work remaining.
       {

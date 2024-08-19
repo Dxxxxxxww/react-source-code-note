@@ -28,7 +28,7 @@ export function pop(heap) {
 function siftUp(heap, node, i) {
   let index = i
   while (index > 0) {
-    // 获取父节点的索引位置
+    // 获取父节点的索引位置，父节点索引刚好是子节点索引 -1 后 /2 取整
     const parentIndex = (index - 1) >>> 1
     const parent = heap[parentIndex]
     if (compare(parent, node) > 0) {

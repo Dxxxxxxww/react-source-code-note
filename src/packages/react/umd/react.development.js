@@ -3006,7 +3006,7 @@
   var currentTask = null
   // 当前执行的任务优先级
   var currentPriorityLevel = NormalPriority // This is set while performing work, to prevent re-entrance.
-  // 是否在执行 flushWork 
+    // 是否在执行 flushWork
   var isPerformingWork = false
   // 是否有任务在调度标志
   var isHostCallbackScheduled = false
@@ -3110,20 +3110,31 @@
         return workLoop(hasTimeRemaining, initialTime)
       }
     } finally {
+      // 将当前执行任务的全局变量引用置为 null
       currentTask = null
       currentPriorityLevel = previousPriorityLevel
+      // 将 flushWork 执行标志置为 false
       isPerformingWork = false
     }
   }
 
+  /**
+   * @desc 任务调度的核心，当执行到 workLoop 时意味着已经是在下一个宏任务了。在不超时的情况下批处理任务
+   * @param hasTimeRemaining
+   * @param initialTime
+   * @returns {boolean}
+   */
   function workLoop(hasTimeRemaining, initialTime) {
     var currentTime = initialTime
     // 遍历延时任务队列，取出到期的任务放入普通任务队列中
     advanceTimers(currentTime)
+    // 从普通任务队列中取出任务
     currentTask = peek(taskQueue)
 
-    // 如果任务还没过期并且 shouldYieldToHost 打断了，就不执行，否则就从普通任务队列中拿到堆顶任务执行。
+    // 在一个时间切片中批量执行任务，执行完一个任务如果还有时间剩余，则继续取出任务执行
     while (currentTask !== null && !enableSchedulerDebugging) {
+      // 不执行任务的 case： 任务还没过期 或者 被 shouldYieldToHost 打断了
+      // 否则就从普通任务队列中拿到堆顶任务执行。
       if (
         currentTask.expirationTime > currentTime &&
         (!hasTimeRemaining || shouldYieldToHost())
@@ -3134,12 +3145,15 @@
 
       var callback = currentTask.callback
 
+      // 判断任务是否已经被执行或者取消
       if (typeof callback === 'function') {
         currentTask.callback = null
         currentPriorityLevel = currentTask.priorityLevel
         var didUserCallbackTimeout = currentTask.expirationTime <= currentTime
         // 执行，如果打断了会返回一个函数，等待下次继续执行，
         // 并且这个任务节点不会从堆中删除
+        // 这其实就要求用户在面对大任务时，把大任务拆分成多个小任务执行，让小任务在单个时间切片中执行，没执行完就返回函数，等待下次执行
+        // fiber 并发就是通过 shouldYield 把大任务拆分成小任务执行。详见 react-dom/performConcurrentWorkOnRoot 函数
         var continuationCallback = callback(didUserCallbackTimeout)
         currentTime = getCurrentTime()
 
@@ -3253,7 +3267,7 @@
    * @param {*} priorityLevel 优先级
    * @param {*} callback 任务函数
    * @param {*} options 选项，可以设置延迟
-   * @returns 
+   * @returns
    */
   function unstable_scheduleCallback(priorityLevel, callback, options) {
     // 获取当前时间
@@ -3311,6 +3325,7 @@
       expirationTime: expirationTime,
       // 最小堆中优先对比的 key，值越小，越靠前。
       // 也可以根据 sortIndex 与 startTime，expirationTime 是否相等判断是否是延时任务
+      // 用时间来进行对比，防止饥饿问题。因为随着时间推移，即使再低优先级的任务，优先级都会变高
       sortIndex: -1,
     }
     // 延时任务放入延时任务队列，延时任务到期后会取出放入普通任务队列
@@ -3348,7 +3363,7 @@
       if (!isHostCallbackScheduled && !isPerformingWork) {
         isHostCallbackScheduled = true
         // flushWork 赋值给 scheduledHostCallback，也就是在之后要执行的函数
-        // scheduledHostCallback === flushWork -> wookLoop
+        // scheduledHostCallback === flushWork -> workLoop
         requestHostCallback(flushWork)
       }
     }
@@ -3384,7 +3399,7 @@
     return currentPriorityLevel
   }
 
-  // 是否有宏任务在执行的标记，只在 requestHostCallback 中置为 true，也就是发起宏任务 messageChannel 通知的时候
+  // 是否有任务在调度的标记，只在 requestHostCallback 中置为 true，也就是发起宏任务 messageChannel 通知的时候
   var isMessageLoopRunning = false
   var scheduledHostCallback = null
   var taskTimeoutID = -1 // Scheduler periodically yields in case there is other work on the main
@@ -3467,6 +3482,7 @@
     } // Yielding to the browser will give it a chance to paint, so we can
   }
 
+  // messageChannel postMessage
   var schedulePerformWorkUntilDeadline
 
   if (typeof localSetImmediate === 'function') {
