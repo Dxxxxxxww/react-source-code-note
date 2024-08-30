@@ -5191,6 +5191,7 @@
     /*                */
     1 // You can change the rest (and add more).
 
+  // Placement: 当前 fiberNode 或 子孙 fiberNode 存在需要插入或移动的 HostComponent 或 HostText
   var Placement =
     /*                    */
     2
@@ -5200,6 +5201,7 @@
   var PlacementAndUpdate =
     /*           */
     Placement | Update
+  var Deletion = /*                     */ 0b00000000000000000000001000 // 删除   8
   var ChildDeletion =
     /*                */
     16
@@ -5221,9 +5223,12 @@
   var Snapshot =
     /*                     */
     1024
+  /**
+   * useEffect 标记
+   */
   var Passive =
     /*                      */
-    2048
+    2048 // hook 使用了 useEffect useSyncExternal
   var Hydrating =
     /*                    */
     4096
@@ -5237,7 +5242,7 @@
     /*             */
     16384
   var LifecycleEffectMask =
-    Passive | Update | Callback | Ref | Snapshot | StoreConsistency // Union of all commit flags (flags with the lifetime of a particular commit)
+    Passive | Update | Callback | Ref | Snapshot | StoreConsistency // Union of all commit flags (flags with the lifetime of a particular commit)  生命周期相关
 
   var HostEffectMask =
     /*               */
@@ -5286,7 +5291,10 @@
   var BeforeMutationMask = // TODO: Remove Update flag from before mutation phase by re-landing Visibility
     // flag logic (see #20043)
     Update | Snapshot | 0
-  // Placement: 当前 fiberNode 或 子孙 fiberNode 存在需要插入或移动的 HostComponent 或 HostText
+
+  /**
+   * 触发 commitMutation 的副作用合集
+   */
   var MutationMask =
     Placement |
     Update |
@@ -5295,8 +5303,14 @@
     Ref |
     Hydrating |
     Visibility
-  var LayoutMask = Update | Callback | Ref | Visibility // TODO: Split into PassiveMountMask and PassiveUnmountMask
 
+  /**
+   * 布局相关
+   */
+  var LayoutMask = Update | Callback | Ref | Visibility // TODO: Split into PassiveMountMask and PassiveUnmountMask
+  /**
+   * useEffect 相关
+   */
   var PassiveMask = Passive | ChildDeletion // Union of tags that don't get reset on clones.
   // This allows certain concepts to persist without recalculating them,
   // e.g. whether a subtree contains passive effects or portals.
@@ -11427,6 +11441,9 @@
     }
   } // Calculate the diff between the two objects.
 
+  /**
+   * @desc 查看props是否有变更，返回变更属性数组
+   */
   function diffProperties(
     domElement,
     tag,
@@ -12711,7 +12728,9 @@
       rootContainerInstance,
       parentNamespace
     )
+    // 将 fiber 节点挂到 dom 上
     precacheFiberNode(internalInstanceHandle, domElement)
+    // 将 fiber.pendingProps 挂到 dom 上
     updateFiberProps(domElement, props)
     return domElement
   }
@@ -12725,9 +12744,13 @@
     rootContainerInstance,
     hostContext
   ) {
+    // 会给真实 dom 上添加属性
     setInitialProperties(domElement, type, props, rootContainerInstance)
     return shouldAutoFocusHostComponent(type, props)
   }
+  /**
+   * @desc 调用 diffProperties 查看props是否有变更，返回变更属性数组
+   */
   function prepareUpdate(
     domElement,
     type,
@@ -12755,6 +12778,9 @@
 
     return diffProperties(domElement, type, oldProps, newProps)
   }
+  /**
+   * @desc 判断子节点是不是单个纯文本
+   */
   function shouldSetTextContent(type, props) {
     return (
       type === 'textarea' ||
@@ -13327,6 +13353,11 @@
     delete node[internalEventHandlerListenersKey]
     delete node[internalEventHandlesSetKey]
   }
+  /**
+   * @desc 将 fiber 节点挂到 dom 上
+   * @param {*} hostInst
+   * @param {*} node
+   */
   function precacheFiberNode(hostInst, node) {
     node[internalInstanceKey] = hostInst
   }
@@ -13468,6 +13499,9 @@
   function getFiberCurrentPropsFromNode(node) {
     return node[internalPropsKey] || null
   }
+  /**
+   * @desc 将 fiber.pendingProps 挂到 dom 上
+   */
   function updateFiberProps(node, props) {
     node[internalPropsKey] = props
   }
@@ -17679,6 +17713,9 @@
       return existingChildren
     }
 
+    /**
+     * @desc
+     */
     function useFiber(fiber, pendingProps) {
       // We currently set sibling to null and index to 0 here because it is easy
       // to forget to do before returning it. E.g. for the single child case.
@@ -18526,6 +18563,7 @@
       while (child !== null) {
         // TODO: If key === null and child.key === null, then this only applies to
         // the first item in the list.
+        // 是否复用老节点判断 1. key 是否相同 2. 判断 element.type 是否相同
         if (child.key === key) {
           var elementType = element.type
 
@@ -18556,6 +18594,7 @@
             ) {
               deleteRemainingChildren(returnFiber, child.sibling)
 
+              // 根据当前的 current 克隆一个节点，通过 current 的属性，和 新的 props 属性创建一个新的 fiberNode，并赋值给了 wIP
               var _existing = useFiber(child, element.props)
 
               _existing.ref = coerceRef(returnFiber, child, element)
@@ -18983,10 +19022,15 @@
   var HasEffect =
     /* */
     1 // Represents the phase in which the effect (not the clean-up) fires.
-
+  /**
+   * useInsertionEffect 标记
+   */
   var Insertion =
     /*  */
     2
+  /**
+   * useLayoutEffect 标记
+   */
   var Layout =
     /*    */
     4
@@ -19263,6 +19307,7 @@
     // so memoizedState would be null during updates and mounts.
 
     {
+      // 更新阶段的 hooks，DEV是因为这是 dev 文件
       if (current !== null && current.memoizedState !== null) {
         ReactCurrentDispatcher$1.current = HooksDispatcherOnUpdateInDEV
       } else if (hookTypesDev !== null) {
@@ -19274,6 +19319,7 @@
         ReactCurrentDispatcher$1.current =
           HooksDispatcherOnMountWithHookTypesInDEV
       } else {
+        // 挂载阶段的 hooks，DEV是因为这是 dev 文件
         ReactCurrentDispatcher$1.current = HooksDispatcherOnMountInDEV
       }
     }
@@ -20780,7 +20826,8 @@
         currentHookNameInDev = 'useLayoutEffect'
         mountHookTypesDev()
         checkDepsAreArrayDev(deps)
-        // 内部调用了 mountEffectImpl， 只不过 tag 是 LayoutStatic || MountLayoutDev
+        // 内部调用了 mountEffectImpl， 只不过 tag 是 LayoutStatic || MountLayoutDev .
+        // 也就是说 useLayoutEffect 和 useEffect 都存在 updateQueue.lastEffect 指向的环形链表上
         return mountLayoutEffect(create, deps)
       },
       useMemo: function (create, deps) {
@@ -22335,8 +22382,17 @@
     }
   }
 
+  /**
+   * @desc 自下而上直至 root，将子级dom 添加到自身 dom children 上，生成真实 dom 树。多个子级会进行dom 挂载，单个子级纯文本节点通过属性设置方法设置
+   */
   var appendAllChildren
+  /**
+   * @desc 空函数
+   */
   var updateHostContainer
+  /**
+   * @desc 打上更新标记。将变化的属性存到 updatePayload 数组上，然后赋值给  workInProgress.updateQueue 上
+   */
   var updateHostComponent
   var updateHostText
 
@@ -22354,6 +22410,7 @@
 
       while (node !== null) {
         if (node.tag === HostComponent || node.tag === HostText) {
+          // 多个子级，会进行dom 挂载
           appendInitialChild(parent, node.stateNode)
         } else if (node.tag === HostPortal);
         else if (node.child !== null) {
@@ -22408,6 +22465,7 @@
       // component is hitting the resume path. Figure out why. Possibly
       // related to `hidden`.
 
+      // 内部执行 diffProperties 查看props是否有变更，返回变更属性数组
       var updatePayload = prepareUpdate(
         instance,
         type,
@@ -22421,6 +22479,7 @@
       // is a new ref we mark this as an update. All the work is done in commitWork.
 
       if (updatePayload) {
+        // 打上更新 flag
         markUpdate(workInProgress)
       }
     }
@@ -22509,6 +22568,9 @@
     }
   }
 
+  /**
+   * @desc  lanes 和 flags（副作用标签）向上收集
+   */
   function bubbleProperties(completedWork) {
     var didBailout =
       completedWork.alternate !== null &&
@@ -22525,6 +22587,8 @@
         var treeBaseDuration = completedWork.selfBaseDuration
         var child = completedWork.child
 
+        // 遍历从直接子节点上收集合并 lanes 和 flags ，最后赋值给completedWork
+        // 后续在 commit 根据 flags 不同做不同处理。插入Placement，更新Update，删除ChildDeletion Deletion，回调Callback等等
         while (child !== null) {
           newChildLanes = mergeLanes(
             newChildLanes,
@@ -22618,6 +22682,9 @@
     return didBailout
   }
 
+  /**
+   * @desc 对于函数组件和类组件，几乎没有操作，大部分逻辑集中在 HostComponent 上。 HostRoot 中调用了个空函数  HostTest 中创建文本节点
+   */
   function completeWork(current, workInProgress, renderLanes) {
     var newProps = workInProgress.pendingProps // Note: This intentionally doesn't check if we're hydrating because comparing
     // to the current tree provider fiber is just as fast and less error-prone.
@@ -22637,6 +22704,7 @@
       case Profiler:
       case ContextConsumer:
       case MemoComponent:
+        // 属性处理
         bubbleProperties(workInProgress)
         return null
 
@@ -22646,11 +22714,12 @@
         if (isContextProvider(Component)) {
           popContext(workInProgress)
         }
-
+        // 属性处理
         bubbleProperties(workInProgress)
         return null
       }
 
+      // completeWork 进入虚拟fiberNode，意味着 render 阶段要结束了。此时内存中已经有一棵真实 dom 树了。接下来要进入 commit 阶段
       case HostRoot: {
         var fiberRoot = workInProgress.stateNode
 
@@ -22677,11 +22746,15 @@
             // This handles the case of React rendering into a container with previous children.
             // It's also safe to do for updates too, because current.child would only be null
             // if the previous render was null (so the container would already be empty).
+            // 给 虚拟 fiberNode， HostRoot 打上这个标记，
+            // 是在 commit 阶段执行，root.textContent = ''，清空整个dom
             workInProgress.flags |= Snapshot
           }
         }
 
+        // 空函数调用
         updateHostContainer(current, workInProgress)
+        // 属性处理
         bubbleProperties(workInProgress)
         return null
       }
@@ -22693,6 +22766,7 @@
 
         // 更新流程
         if (current !== null && workInProgress.stateNode != null) {
+          // 打上更新标记。将变化的属性存到 updatePayload 数组上，然后赋值给  workInProgress.updateQueue 上
           updateHostComponent(
             current,
             workInProgress,
@@ -22712,7 +22786,7 @@
                   'caused by a bug in React. Please file an issue.'
               )
             } // This can happen when we abort work.
-
+            // 属性处理
             bubbleProperties(workInProgress)
             return null
           }
@@ -22739,7 +22813,7 @@
               markUpdate(workInProgress)
             }
           } else {
-            // 在 completeWork 中创建 dom ，并绑定到 fiber.stateNode 上
+            // 在 completeWork 中创建 dom
             // 内部调用 createElement
             var instance = createInstance(
               type,
@@ -22748,11 +22822,16 @@
               currentHostContext,
               workInProgress
             )
+            // 自下而上直至 root，将子级dom 添加到自身 dom children 上，instance.appendChild(child)
+            // 这样一来内存中就会有一棵真实 dom 树，
+            // 这里需要注意的是，只会挂载多个子节点。如果是单一纯文本节点，因为在 beginWork 中没有生成 fiber。所以需要通过 finalizeInitialChildren 中 setTextContent 来设置内容
             appendAllChildren(instance, workInProgress, false, false)
+            // 绑定到 fiber.stateNode 上
             workInProgress.stateNode = instance // Certain renderers require commit-time effects for initial mount.
             // (eg DOM renderer supports auto-focus for certain elements).
             // Make sure such renderers get scheduled for later work.
 
+            // finalizeInitialChildren 内部会给真实 dom 上添加属性
             if (
               finalizeInitialChildren(
                 instance,
@@ -22770,7 +22849,7 @@
             markRef(workInProgress)
           }
         }
-
+        // 属性处理
         bubbleProperties(workInProgress)
         return null
       }
@@ -22804,6 +22883,7 @@
               markUpdate(workInProgress)
             }
           } else {
+            // 创建文本节点 createTextNode
             workInProgress.stateNode = createTextInstance(
               newText,
               _rootContainerInstance,
@@ -23991,7 +24071,9 @@
         workInProgress.flags |= Placement
       } // In the initial pass we might need to construct the instance.
 
+      // 核心代码
       constructClassInstance(workInProgress, Component, nextProps)
+      // 核心代码
       mountClassInstance(workInProgress, Component, nextProps, renderLanes)
       shouldUpdate = true
     } else if (current === null) {
@@ -24243,6 +24325,7 @@
     var nextChildren = nextProps.children
     var isDirectTextChild = shouldSetTextContent(type, nextProps)
 
+    // 子节点是单个纯文本，不生成 fiber
     if (isDirectTextChild) {
       // We special case a direct text child of a host node. This is a common
       // case. We won't handle it as a reified child. We will instead handle
@@ -26357,7 +26440,8 @@
     }
 
     // 只有虚拟fiberNode在初次挂载时有 current。其他节点都没有，比如 严格模式节点， <App />等等
-    // 说明是更新阶段
+    // 说明是更新阶段，做一些额外处理。
+    // beginWork 的主要逻辑都在下面的 switch 分支内
     if (current !== null) {
       var oldProps = current.memoizedProps
       var newProps = workInProgress.pendingProps
@@ -26385,6 +26469,7 @@
         ) {
           // No pending updates or context. Bail out now.
           didReceiveUpdate = false
+          // 节点没有变动复用节点，这里应该是边缘 case，主要逻辑在 switch 里面
           return attemptEarlyBailoutIfNoScheduledUpdate(
             current,
             workInProgress,
@@ -26431,7 +26516,8 @@
     workInProgress.lanes = NoLanes
 
     switch (workInProgress.tag) {
-      // 未决状态，还不知道是类组件还是函数组件
+      // 未决状态，函数组件挂载进入
+      // 未决状态中类组件的判断只是一种边界 case 的处理。即一个函数组件中返回了类组件，这种组件会被标记成类组件，优化执行流程。
       case IndeterminateComponent: {
         return mountIndeterminateComponent(
           current,
@@ -26452,6 +26538,7 @@
         )
       }
 
+      // 函数组件更新阶段
       case FunctionComponent: {
         var Component = workInProgress.type
         var unresolvedProps = workInProgress.pendingProps
@@ -26468,6 +26555,7 @@
         )
       }
 
+      // 类组件挂载/更新阶段
       case ClassComponent: {
         var _Component = workInProgress.type
         var _unresolvedProps = workInProgress.pendingProps
@@ -26485,13 +26573,18 @@
           renderLanes
         )
       }
-      // 虚拟 fiberNode, HostRootFiber
+      // 虚拟 fiberNode, HostRootFiber，更新/挂载阶段
       case HostRoot:
         return updateHostRoot(current, workInProgress, renderLanes)
 
+      // html 元素，更新/挂载阶段
+      // 不会对单个文本节点生成fiber <span>123</span> , <span>{count}</span>
+      // 内部调用 shouldSetTextContent 判断子级是否为单个文本，如果是则不生成子级 fiber
+      // 如果是多个文本节点会生成 fiber ，tag 为 HostText
       case HostComponent:
         return updateHostComponent$1(current, workInProgress, renderLanes)
 
+      // 多个文本节点，更新/挂载阶段 e.g. <span>娃哈哈{props.name // name 是字符串或者 number}</span>  <span>娃哈哈</span>
       case HostText:
         return updateHostText$1(current, workInProgress)
 
@@ -26933,6 +27026,7 @@
   function commitBeforeMutationEffects(root, firstChild) {
     focusedInstanceHandle = prepareForCommit(root.containerInfo)
     nextEffect = firstChild
+    // 主要看这个函数
     commitBeforeMutationEffects_begin() // We no longer need to track the active instance fiber
 
     var shouldFire = shouldFireAfterActiveInstanceBlur
@@ -26954,6 +27048,7 @@
         ensureCorrectReturnPointer(child, fiber)
         nextEffect = child
       } else {
+        // 主要看这个函数
         commitBeforeMutationEffects_complete()
       }
     }
@@ -26966,6 +27061,7 @@
       setCurrentFiber(fiber)
 
       try {
+        // 主要看这个函数
         commitBeforeMutationEffectsOnFiber(fiber)
       } catch (error) {
         reportUncaughtErrorInDEV(error)
@@ -26985,6 +27081,9 @@
     }
   }
 
+  /**
+   * @desc 处理 Snapshot 标记节点。主要对 ClassComponent 和 HostRoot 做一些事情。因为只有类组件和 HostRoot 才会有可能打上 Snapshot 标记。
+   */
   function commitBeforeMutationEffectsOnFiber(finishedWork) {
     var current = finishedWork.alternate
     var flags = finishedWork.flags
@@ -27036,6 +27135,7 @@
               }
             }
 
+            // 主要就是执行用户编写的 getSnapshotBeforeUpdate 钩子
             var snapshot = instance.getSnapshotBeforeUpdate(
               finishedWork.elementType === finishedWork.type
                 ? prevProps
@@ -27065,7 +27165,8 @@
 
           break
         }
-
+        // HostRootFiber 虚拟 fiberNode 清空 dom。 textContent
+        // 对应的就是在 completeWork 中打得 Snapshot 标记
         case HostRoot: {
           {
             var root = finishedWork.stateNode
@@ -27289,15 +27390,13 @@
     }
   }
 
-  /**
-   * @desc 调用 layoutEffect
-   */
   function commitLayoutEffectOnFiber(
     finishedRoot,
     current,
     finishedWork,
     committedLanes
   ) {
+    // LayoutMask
     if ((finishedWork.flags & LayoutMask) !== NoFlags) {
       switch (finishedWork.tag) {
         case FunctionComponent:
@@ -27311,7 +27410,7 @@
             if (finishedWork.mode & ProfileMode) {
               try {
                 startLayoutEffectTimer()
-                // 调用 layoutEffect
+                // 会调用 layoutEffect， Layout useLayoutEffect
                 commitHookEffectListMount(Layout | HasEffect, finishedWork)
               } finally {
                 recordLayoutEffectDuration(finishedWork)
@@ -27324,7 +27423,7 @@
 
           break
         }
-
+        // 执行 componentDidMount 或是 componentDidUpdate 声明周期钩子
         case ClassComponent: {
           var instance = finishedWork.stateNode
 
@@ -27806,6 +27905,7 @@
     onCommitUnmount(current)
 
     switch (current.tag) {
+      // useEffect 返回函数同步执行
       case FunctionComponent:
       case ForwardRef:
       case MemoComponent:
@@ -27826,6 +27926,7 @@
 
               if (destroy !== undefined) {
                 if ((tag & Insertion) !== NoFlags$1) {
+                  // useEffect 返回函数同步执行
                   safelyCallDestroy(current, nearestMountedAncestor, destroy)
                 } else if ((tag & Layout) !== NoFlags$1) {
                   {
@@ -27834,9 +27935,11 @@
 
                   if (current.mode & ProfileMode) {
                     startLayoutEffectTimer()
+                    // useEffect 返回函数同步执行
                     safelyCallDestroy(current, nearestMountedAncestor, destroy)
                     recordLayoutEffectDuration(current)
                   } else {
+                    // useEffect 返回函数同步执行
                     safelyCallDestroy(current, nearestMountedAncestor, destroy)
                   }
 
@@ -27859,6 +27962,7 @@
         var instance = current.stateNode
 
         if (typeof instance.componentWillUnmount === 'function') {
+          // 类组件生命周期调用
           safelyCallComponentWillUnmount(
             current,
             nearestMountedAncestor,
@@ -27868,7 +27972,7 @@
 
         return
       }
-
+      // 这里还能进来吗？ ref 删除
       case HostComponent: {
         safelyDetachRef(current, nearestMountedAncestor)
         return
@@ -28252,13 +28356,16 @@
         currentParentIsValid = true
       }
 
+      // div 等元素节点和文本节点处理
       if (node.tag === HostComponent || node.tag === HostText) {
         commitNestedUnmounts(finishedRoot, node, nearestMountedAncestor) // After all the children have unmounted, it is now safe to remove the
         // node from the tree.
 
+        // div 元素节点移除子元素 removeChild()
         if (currentParentIsContainer) {
           removeChildFromContainer(currentParent, node.stateNode)
         } else {
+          // 文本节点移除
           removeChild(currentParent, node.stateNode)
         } // Don't visit children because we already visited them.
       } else if (node.tag === DehydratedFragment) {
@@ -28279,6 +28386,7 @@
           continue
         }
       } else {
+        // 其余节点相关处理，比如说函数组件 effect 处理
         commitUnmount(finishedRoot, node, nearestMountedAncestor) // Visit children because we may find more host components below.
 
         if (node.child !== null) {
@@ -28315,9 +28423,10 @@
     {
       // Recursively delete all host nodes from the parent.
       // Detach refs and call componentWillUnmount() on the whole subtree.
+      // 删除子节点处理
       unmountHostComponents(finishedRoot, current, nearestMountedAncestor)
     }
-
+    // 解除 fiber 联系
     detachFiberMutation(current)
   }
 
@@ -28536,11 +28645,13 @@
 
       var deletions = fiber.deletions
 
+      // 如果有节点删除
       if (deletions !== null) {
         for (var i = 0; i < deletions.length; i++) {
           var childToDelete = deletions[i]
 
           try {
+            // 先进行子节点删除处理
             commitDeletion(root, childToDelete, fiber)
           } catch (error) {
             reportUncaughtErrorInDEV(error)
@@ -28555,6 +28666,7 @@
         ensureCorrectReturnPointer(child, fiber)
         nextEffect = child
       } else {
+        // 处理其他
         commitMutationEffects_complete(root)
       }
     }
@@ -28566,6 +28678,7 @@
       setCurrentFiber(fiber)
 
       try {
+        // 看这
         commitMutationEffectsOnFiber(fiber, root)
       } catch (error) {
         reportUncaughtErrorInDEV(error)
@@ -28600,6 +28713,7 @@
       var current = finishedWork.alternate
 
       if (current !== null) {
+        // ref 变量重置为 null
         commitDetachRef(current)
       }
     }
@@ -28804,7 +28918,7 @@
         setCurrentFiber(fiber)
 
         try {
-          // 调用 layoutEffect
+          // 会调用 layoutEffect create
           commitLayoutEffectOnFiber(root, current, fiber, committedLanes)
         } catch (error) {
           reportUncaughtErrorInDEV(error)
@@ -29679,6 +29793,7 @@
   function scheduleUpdateOnFiber(fiber, lane, eventTime) {
     checkForNestedUpdates()
     // 标记节点有更新，从当前fiber到root
+    // root 是 null 或者 FiberRootNode 即 fiber 树的容器
     var root = markUpdateLaneFromFiberToRoot(fiber, lane)
 
     if (root === null) {
@@ -29906,7 +30021,7 @@
           // of `act`.
           ReactCurrentActQueue$1.current.push(flushSyncCallbacks)
         } else {
-          // 通过微任务执行 syncQueue 中的事件
+          // 通过微任务执行 syncQueue 中的事件，也就是 performSyncWorkOnRoot
           scheduleMicrotask(flushSyncCallbacks)
         }
       }
@@ -30017,13 +30132,15 @@
       !didTimeout
 
     // 执行 render，如果渲染没执行完，而是超时被打断了，会返回 RootIncomplete 0
+    // render阶段执行完成，则会返回在 completeUnitOfWork 设置的标记 RootCompleted 5
     // 如果是第一次渲染页面就会被判定为同步渲染，因为第一次默认渲染的任务优先级是DefaultLane
     var exitStatus = shouldTimeSlice
       ? renderRootConcurrent(root, lanes)
       : renderRootSync(root, lanes)
 
-    // 渲染错误case
+    // 状态不等于渲染中
     if (exitStatus !== RootIncomplete) {
+      // 渲染错误case
       if (exitStatus === RootErrored) {
         // If something threw an error, try rendering one more time. We'll
         // render synchronously to block concurrent data mutations, and we'll
@@ -30079,12 +30196,13 @@
         }
       } // We now have a consistent tree. The next step is either to commit it,
       // or, if something suspended, wait to commit it after a timeout.
-
+      // 将构建好的 fiber tree 赋值给 FiberRootNode.finishedWork
       root.finishedWork = finishedWork
       root.finishedLanes = lanes
+      // 最终执行 commitRoot ，进入 commit 阶段，与同步渲染流程一致
       finishConcurrentRender(root, exitStatus, lanes)
     }
-
+    // 进行下次调度
     ensureRootIsScheduled(root, now())
 
     // 如果渲染没有结束，此时的 currentTask 对象相同，则返回 fiber 转化函数，继续 fiber 转化
@@ -30337,6 +30455,7 @@
       throw new Error('Should not already be working.')
     }
 
+    // 副作用？
     flushPassiveEffects()
     var lanes = getNextLanes(root, NoLanes)
 
@@ -30346,6 +30465,7 @@
       return null
     }
 
+    // render阶段执行完成，则会返回在 completeUnitOfWork 设置的标记 RootCompleted 5
     var exitStatus = renderRootSync(root, lanes)
 
     if (root.tag !== LegacyRoot && exitStatus === RootErrored) {
@@ -30371,11 +30491,14 @@
     // will commit it even if something suspended.
 
     var finishedWork = root.current.alternate
+    // 将构建好的 fiber tree 赋值给 FiberRootNode.finishedWork
     root.finishedWork = finishedWork
     root.finishedLanes = lanes
+    // 进入 commit 阶段
     commitRoot(root) // Before exiting, make sure there's a callback scheduled for the next
     // pending level.
 
+    // 进行下次调度
     ensureRootIsScheduled(root, now())
     return null
   }
@@ -30969,6 +31092,7 @@
     } while (completedWork !== null) // We've reached the root.
 
     if (workInProgressRootExitStatus === RootIncomplete) {
+      // 最后，标记本次render阶段结束，fiber构建完成
       workInProgressRootExitStatus = RootCompleted
     }
   }
@@ -30995,6 +31119,10 @@
     return null
   }
 
+  /**
+   * @desc 三个小阶段也是按照深度优先遍历，跟 render 阶段一样先递再归
+   * @param {FiberRootNode} root FiberRootNode fiber树容器
+   */
   function commitRootImpl(root, renderPriorityLevel) {
     do {
       // `flushPassiveEffects` will call `flushSyncUpdateQueue` at the end, which
@@ -31003,7 +31131,7 @@
       // no more pending effects.
       // TODO: Might be better if `flushPassiveEffects` did not automatically
       // flush synchronous work at the end, to avoid factoring hazards like this.
-      // 调用 effect
+      // 调用 effect?
       flushPassiveEffects()
     } while (rootWithPendingPassiveEffects !== null)
 
@@ -31014,7 +31142,7 @@
     }
 
     // root.finishedWork 是 Wip HostRootFiber 即 render 阶段构建的
-    // Wip Fiber Tree 的 HostRootFiber
+    // root FiberRootNode
     var finishedWork = root.finishedWork
     var lanes = root.finishedLanes
 
@@ -31074,7 +31202,7 @@
     ) {
       if (!rootDoesHavePassiveEffects) {
         rootDoesHavePassiveEffects = true
-        // 调用 useEffect
+        // 调用 useEffect?
         scheduleCallback$1(NormalPriority, function () {
           flushPassiveEffects() // This render triggered passive effects: release the root cache pool
           // *after* passive effects fire to avoid freeing a cache pool that may
@@ -31116,7 +31244,9 @@
       // The first phase a "before mutation" phase. We use this phase to read the
       // state of the host tree right before we mutate it. This is where
       // getSnapshotBeforeUpdate is called.
-      // 在调用 useEffect 之后，执行 commitBeforeMutationEffects beforeMutation 阶段
+      // 在调用 useEffect 之后，执行 commitBeforeMutationEffects
+      // 1. beforeMutation 阶段
+      // 主要对含有 Snapshot 标记的节点做一些处理。ClassComponent , HostRoot
       var shouldFireAfterActiveInstanceBlur = commitBeforeMutationEffects(
         root,
         finishedWork
@@ -31128,7 +31258,24 @@
         recordCommitTime()
       }
 
-      //   mutation 阶段
+      //  2. mutation 阶段  commitMutationEffects 这个函数看 v18.3 版本的，感觉这个版本的有bug
+      // 2.1.子节点删除处理 Deletion
+      // 对于函数组件，执行副作用，但不是执行 useEffect。会执行 useInsertionEffect 的卸载和挂载。会执行 useInsertionEffect 的卸载和挂载。还有无依赖项的useLayoutEffect 的卸载 dep = []， 和不设置 dep的。
+      // 对文本节点 （HostText）进行删除———— removeChild
+      // 类组件（ClassComponent）调用生命周期 componentWillUnmount
+      // 2.2. 插入节点处理 Placement
+      // 对  HostComponent ，将自己的 dom 插入父级 dom 中的
+      // 对  HostRoot 和 HostPortal ，插入到 #root 上
+      // 2.3 引用 Ref
+      // 对于 div 等元素节点（HostComponent） 重置 ref.current 为 null
+      // 对类组件 重置 ref.current 为 null
+      // 2.4 ContentReset
+      // 对 HostComponent 执行 resetTextContent ，重置其 textContent
+      // 2.5 Update
+      // 函数组件 执行副作用，但不是执行 useEffect。会执行 useInsertionEffect 的卸载和挂载。还有有依赖项的useLayoutEffect 的卸载 dep = [state]
+      // HostComponent 更新 dom 属性
+      // HostText 修改文本节点的文本内容 nodevValue = 'xxx'
+      // 总结，也就是各种 dom 操作。钩子，hook 执行。清空 ref 引用
       commitMutationEffects(root, finishedWork, lanes)
 
       resetAfterCommit(root.containerInfo) // The work-in-progress tree is now the current tree. This must come after
@@ -31136,12 +31283,18 @@
       // componentWillUnmount, but before the layout phase, so that the finished
       // work is current during componentDidMount/Update.
 
+      // 执行完 mutation 阶段，就把新的 fiber tree 赋值到当前树上
       root.current = finishedWork // The next phase is the layout phase, where we call effects that read
 
       {
         markLayoutEffectsStarted(lanes)
       }
-      //   layout 阶段
+      //   3. layout 阶段
+      // 3.1 类组件 componentDidMount 或者 componentDidUpdate 的调用，根据是否有 current 来判断
+      // 3.2 函数组件 useLayoutEffect 的 create 执行，并得到 destroy，并挂到 effect.destroy 上，
+      // 3.3 不在 switch case 中执行，而是在下方对所有组件判断如果有 Ref，进行 Ref 的赋值。就是取 fiber.stateNode 的值。
+      // fiber.stateNode 就是 dom。
+      // 只有 虚拟 Fiber HostRoot 的 stateNode 指向的是 FiberRootNode
       commitLayoutEffects(finishedWork, root, lanes)
 
       {
@@ -31211,6 +31364,8 @@
     } // Always call this before exiting `commitRoot`, to ensure that any
     // additional work on this root is scheduled.
 
+    // 进行下次调度
+    // 这里执行了一次。但是在 调用 commitRoot() 的地方，也执行了一次 即 performSyncWorkOnRoot、performConcurrentWorkOnRoot 中
     ensureRootIsScheduled(root, now())
 
     if (hasUncaughtError) {
@@ -32559,8 +32714,8 @@
   }
 
   /**
-  * @desc 通过原型上是否有 isReactComponent 来判断是否是类组件。如果是继承 React.Component 则会有这个属性
-  */
+   * @desc 通过原型上是否有 isReactComponent 来判断是否是类组件。如果是继承 React.Component 则会有这个属性
+   */
   function shouldConstruct$1(Component) {
     var prototype = Component.prototype
     return !!(prototype && prototype.isReactComponent)
@@ -32592,7 +32747,11 @@
   } // This is used to create an alternate fiber to do work on.
 
   /**
-   * @desc 创建一个fiberNode，基本就是对RootFiber的复制，也就是虚拟 fiberNode, tag 是3
+   * @desc 根据传入的 fiberNode 克隆一个fiberNode，如果是更新，则会复用原来的对象，更新其属性。
+   * 在初始化时会通过 prepareFreshStatck 克隆一个 RootFiber，也就是虚拟 fiberNode, tag 是3
+   * 在更新时有节点能够复用也会通过 beginWork/attemptEarlyBailoutIfNoScheduledUpdate/bailoutOnAlreadyFinishedWork/cloneChildFibers 调用。
+   *
+   * 或者switch 到各个组件分支中再更新判断，内部其实也是执行bailoutOnAlreadyFinishedWork/cloneChildFibers 调用。
    */
   function createWorkInProgress(current, pendingProps) {
     var workInProgress = current.alternate
@@ -32947,9 +33106,9 @@
     return fiber
   }
   /**
-  * @desc 通过 vdom 创建 fiber
-  * @param {ReactElement} element vdom
-  */
+   * @desc 通过 vdom 创建 fiber
+   * @param {ReactElement} element vdom
+   */
   function createFiberFromElement(element, mode, lanes) {
     var owner = null
 
@@ -33112,7 +33271,7 @@
     this.pendingChildren = null
     this.current = null // 保存当前渲染的 fiber tree
     this.pingCache = null
-    this.finishedWork = null // 新提交的 fiber tree
+    this.finishedWork = null // render阶段结束，还没有commit的 fiber tree。commit 阶段完，这棵树就会成 current 树
     this.timeoutHandle = noTimeout // 定时器任务（宏任务）
     this.context = null // 上下文
     this.pendingContext = null
@@ -33368,7 +33527,7 @@
     var update = createUpdate(eventTime, lane) // Caution: React DevTools currently depends on this property
     // being called "element".
 
-    // element 就是 <App/> 组件
+    // element 就是 <App/> 组件，也就是整棵 vdom 树
     update.payload = {
       element: element,
     }
@@ -33864,7 +34023,7 @@
     markContainerAsRoot(root.current, container)
     var rootContainerElement =
       container.nodeType === COMMENT_NODE ? container.parentNode : container
-    // 给 app 节点绑定所有事件
+    // 给 app 节点绑定所有事件，事件委托，合成事件入口
     listenToAllSupportedEvents(rootContainerElement) // TODO: Delete this path
 
     if (mutableSources) {
