@@ -17737,9 +17737,12 @@
 
       var current = newFiber.alternate
 
+      // 有 alternate 则表示是复用的节点
       if (current !== null) {
+        // 获取复用的节点在旧节点列表中的位置
         var oldIndex = current.index
 
+        // 找到新节点在旧节点列表中的位置之前的节点，标记右移
         if (oldIndex < lastPlacedIndex) {
           // This is a move.
           newFiber.flags |= Placement
@@ -17749,6 +17752,7 @@
           return oldIndex
         }
       } else {
+        // 新节点不需要打标记
         // This is an insertion.
         newFiber.flags |= Placement
         return lastPlacedIndex
@@ -18120,6 +18124,9 @@
       return knownKeys
     }
 
+    /**
+     * @ diff 。创建/复用 fiber。复用节点会用新的 props
+     */
     function reconcileChildrenArray(
       returnFiber,
       currentFirstChild,
@@ -18151,13 +18158,21 @@
         }
       }
 
+      // 新创建的第一个 child fiber
       var resultingFirstChild = null
+      // 上一个新的 fiber
       var previousNewFiber = null
+      // 当前第一个 child  fiber ，即旧的第一个 child fiber
       var oldFiber = currentFirstChild
+      // 偏移标记
       var lastPlacedIndex = 0
+      // 新节点数组下标
       var newIdx = 0
       var nextOldFiber = null
 
+      // react diff 是单向遍历
+      // 第一步，同时遍历新旧节点
+      // 跳出循环条件： 1. 新节点遍历完 2. 旧节点遍历完
       for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
         if (oldFiber.index > newIdx) {
           nextOldFiber = oldFiber
@@ -18172,7 +18187,7 @@
           newChildren[newIdx],
           lanes
         )
-
+        // 3. 新旧节点不同
         if (newFiber === null) {
           // TODO: This breaks on empty slots like null children. That's
           // unfortunate because it triggers the slow path all the time. We need
@@ -18210,8 +18225,11 @@
         oldFiber = nextOldFiber
       }
 
+      // 跳出循环后的判断
+      // 第二步，判断是新节点遍历完了，如果还有旧节点则标记全删除，并收集到父级 fiber 的 deletions 中
       if (newIdx === newChildren.length) {
         // We've reached the end of the new children. We can delete the rest.
+        // 标记删除
         deleteRemainingChildren(returnFiber, oldFiber)
 
         if (getIsHydrating()) {
@@ -18222,16 +18240,19 @@
         return resultingFirstChild
       }
 
+      // 跳出循环后的判断
+      // 第三步，判断是新节点遍历完了，创建剩余新节点，并打上 Placement 的标记
       if (oldFiber === null) {
         // If we don't have any more existing children we can choose a fast path
         // since the rest will all be insertions.
         for (; newIdx < newChildren.length; newIdx++) {
+          // 创建节点
           var _newFiber = createChild(returnFiber, newChildren[newIdx], lanes)
 
           if (_newFiber === null) {
             continue
           }
-
+          // 打标记
           lastPlacedIndex = placeChild(_newFiber, lastPlacedIndex, newIdx)
 
           if (previousNewFiber === null) {
@@ -18252,8 +18273,10 @@
         return resultingFirstChild
       } // Add all children to a key map for quick lookups.
 
+      // 第四步，如果新旧节点都有，则建立旧节点映射，new Map ，键名为 key || index
       var existingChildren = mapRemainingChildren(returnFiber, oldFiber) // Keep scanning and use the map to restore deleted items as moves.
 
+      // 继续遍历新节点，看旧节点映射中是否有，如果有则复用，无则新建
       for (; newIdx < newChildren.length; newIdx++) {
         var _newFiber2 = updateFromMap(
           existingChildren,
@@ -18276,6 +18299,28 @@
             }
           }
 
+          // react diff 这么设计的原因是因为对比的是 vdom 数组与 fiber “链表”
+          // 而 Vue 则是新旧数组对比
+          // react diff 是在 beginWork 中进行的，diff 完只是打标记，不移动 dom
+          // vue 则是 diff 时就移动 dom。
+
+          // lastPlacedIndex 会越来越大
+
+          // 这里移动 index 的目的是为了找出新节点列表中，节点在老列表中顺序不同的
+          // 目的是为了找到节点向右移动。
+          // 旧： a0-b1-c2   =>  新： b0-a1-c2
+          // 这里面 b 和 c 节点在老列表中还是维持相同的顺序，只有 a 节点变了，所以只对 a 节点打标记，标记 a 节点需要右移
+          // 第一次遍历：新列表中第一个节点 b ，在旧列表中的 oldIndex 是 1 ，此时 lastPlacedIndex 是 0 ，oldIndex >= lastPlacedIndex , 所以返回 1 赋值给 lastPlacedIndex
+          // 第二次遍历： 新列表中第二个节点 a ，在就列表中的 oldIndex 是 0 ，此时 lastPlacedIndex 是 1 ，oldIndex < lastPlacedIndex ,所以给 a 打右移标记
+
+          // 这种 diff 策略在面对极端 case 时的性能不佳：
+          // 旧： A B C D => 新： D A B C
+          // 这种场景下，其实只要把 D 移到最左侧是最优解，但是因为右移策略，只能把 A B C 都右移。所以在写代码时，我们应该注意要减少把末尾节点移到前面的操作。
+          // 另一种 case A B C D  => E A B C D
+          // 这种情况下ABCD不需要移动，因为 oldIndex 始终 >= lastPlacedIndex
+
+          // 打标记是为了移动 dom 的位置。 fiber 的位置顺序是根据 vdom 来的，而 vdom 在创建时已经知道顺序了。
+          // 打上标记的节点会在 commit/mutation/commitMutationEffectsOnFiber/commitPlacement 中将打上标记的元素插到右侧第一个未打上标签的元素之前
           lastPlacedIndex = placeChild(_newFiber2, lastPlacedIndex, newIdx)
 
           if (previousNewFiber === null) {
@@ -19306,6 +19351,7 @@
     // Non-stateful hooks (e.g. context) don't get added to memoizedState,
     // so memoizedState would be null during updates and mounts.
 
+    // 在调用组件函数前绑定hooks
     {
       // 更新阶段的 hooks，DEV是因为这是 dev 文件
       if (current !== null && current.memoizedState !== null) {
@@ -19484,6 +19530,9 @@
     localIdCounter = 0
   }
 
+  /**
+   * @desc 创建 hook 对象，并挂到 fiber 上，形成链表
+   */
   function mountWorkInProgressHook() {
     var hook = {
       memoizedState: null,
@@ -19604,6 +19653,9 @@
     return [hook.memoizedState, dispatch]
   }
 
+  /**
+   * @desc 遍历更新队列对象上指向的环形链表，执行所有的更新，返回最终的状态
+   */
   function updateReducer(reducer, initialArg, init) {
     var hook = updateWorkInProgressHook()
     var queue = hook.queue
@@ -20048,6 +20100,7 @@
 
   // useState mount
   function mountState(initialState) {
+    // 创建 hook 对象，并挂到 fiber 上，形成链表
     var hook = mountWorkInProgressHook()
 
     if (typeof initialState === 'function') {
@@ -20056,8 +20109,12 @@
     }
 
     hook.memoizedState = hook.baseState = initialState
+    // 创建更新队列对象，
     var queue = {
+      // 指向一个环形链表，dispatchSetState/enqueueRenderPhaseUpdate
       pending: null,
+      // 指向一个环形链表，dispatchSetState/enqueueUpdate$1
+      // 18.3 dispatchSetState/enqueuConcurrentHookUpdate
       interleaved: null,
       lanes: NoLanes,
       dispatch: null,
@@ -20065,6 +20122,10 @@
       lastRenderedState: initialState,
     }
     hook.queue = queue
+    // currentlyRenderingFiber$1 当前 fiber
+    // 执行 dispatch 不会立即更新状态，而是会发把创建更新对象，把新的值或者更新函数保存在对象上，放入更新队列中，
+    // 最后起一个调度，在 update 中从队列中拿出对象来进行状态更新
+    // 在 update 中会遍历更新队列对象中保存的链表，执行所有的更新操作，返回一个最终的状态
     var dispatch = (queue.dispatch = dispatchSetState.bind(
       null,
       currentlyRenderingFiber$1,
@@ -20570,7 +20631,13 @@
     markUpdateInDevTools(fiber, lane)
   }
 
-  // useState 的 设置状态方法
+  /**
+   * @desc useState 的 设置状态方法。
+   * 1. 创建更新对象，塞入更新队列，
+   * 2. 打上更新标记 18。3 中能找到，这里没找到
+   * 3. 发起调度。实际状态更新在 update hook 中。
+   * @param {*} action 新状态，或者更新状态的函数
+   */
   function dispatchSetState(fiber, queue, action) {
     {
       if (typeof arguments[3] === 'function') {
@@ -20583,6 +20650,7 @@
     }
 
     var lane = requestUpdateLane(fiber)
+    // 创建更新对象
     var update = {
       lane: lane,
       action: action,
@@ -20591,9 +20659,11 @@
       next: null,
     }
 
+    // 将更新对象塞入队列
     if (isRenderPhaseUpdate(fiber)) {
       enqueueRenderPhaseUpdate(queue, update)
     } else {
+      // 将更新对象塞入队列
       enqueueUpdate$1(fiber, queue, update)
       var alternate = fiber.alternate
 
@@ -26440,7 +26510,7 @@
     }
 
     // 只有虚拟fiberNode在初次挂载时有 current。其他节点都没有，比如 严格模式节点， <App />等等
-    // 说明是更新阶段，做一些额外处理。
+    // 说明是更新阶段，做一些额外处理。diff 是在创建 fiber 的地方进行的———— reconcileChildrenArray 。单个节点直接判断就好了，没有 diff 的必要
     // beginWork 的主要逻辑都在下面的 switch 分支内
     if (current !== null) {
       var oldProps = current.memoizedProps
@@ -29198,6 +29268,7 @@
       var fiber = nextEffect
       var child = fiber.child
 
+      // 组件删除的 case 执行其卸载
       if ((nextEffect.flags & ChildDeletion) !== NoFlags) {
         var deletions = fiber.deletions
 
@@ -29245,10 +29316,13 @@
         }
       }
 
+      // 如果子级有 useEffect，那就继续深度优先遍历，先执行子级
       if ((fiber.subtreeFlags & PassiveMask) !== NoFlags && child !== null) {
+        // 这个函数实际上做的任务就是 child.return = fiber
         ensureCorrectReturnPointer(child, fiber)
         nextEffect = child
       } else {
+        // 执行卸载
         commitPassiveUnmountEffects_complete()
       }
     }
@@ -29258,6 +29332,7 @@
     while (nextEffect !== null) {
       var fiber = nextEffect
 
+      // 有 useEffect 标记，则执行
       if ((fiber.flags & Passive) !== NoFlags) {
         setCurrentFiber(fiber)
         commitPassiveUnmountOnFiber(fiber)
@@ -31131,7 +31206,7 @@
       // no more pending effects.
       // TODO: Might be better if `flushPassiveEffects` did not automatically
       // flush synchronous work at the end, to avoid factoring hazards like this.
-      // 调用 effect?
+      // 调用 useEffect，这里是特殊的 case，具体的 useEFfect 调用在下面异步中触发
       flushPassiveEffects()
     } while (rootWithPendingPassiveEffects !== null)
 
@@ -31202,7 +31277,9 @@
     ) {
       if (!rootDoesHavePassiveEffects) {
         rootDoesHavePassiveEffects = true
-        // 调用 useEffect?
+        // 使用 schedule 来调用 useEffect
+        // NormalPriority = 3 对应优先级时间 NORMAL_PRIORITY_TIMEOUT 5000
+        // 5s，这等过期会不会太久了？
         scheduleCallback$1(NormalPriority, function () {
           flushPassiveEffects() // This render triggered passive effects: release the root cache pool
           // *after* passive effects fire to avoid freeing a cache pool that may
@@ -31246,7 +31323,9 @@
       // getSnapshotBeforeUpdate is called.
       // 在调用 useEffect 之后，执行 commitBeforeMutationEffects
       // 1. beforeMutation 阶段
-      // 主要对含有 Snapshot 标记的节点做一些处理。ClassComponent , HostRoot
+      // 主要对含有 Snapshot 标记的节点做一些处理。
+      // 1.1 ClassComponent , 对类组件，执行设置的 getSnapshotBeforeUpdate 钩子
+      // 1.2 HostRoot ，对 虚拟 fiberNode，清空 dom。 container.textContent = ''
       var shouldFireAfterActiveInstanceBlur = commitBeforeMutationEffects(
         root,
         finishedWork
@@ -31292,7 +31371,10 @@
       //   3. layout 阶段
       // 3.1 类组件 componentDidMount 或者 componentDidUpdate 的调用，根据是否有 current 来判断
       // 3.2 函数组件 useLayoutEffect 的 create 执行，并得到 destroy，并挂到 effect.destroy 上，
-      // 3.3 不在 switch case 中执行，而是在下方对所有组件判断如果有 Ref，进行 Ref 的赋值。就是取 fiber.stateNode 的值。
+      // 3.3 不在 switch case 中执行，而是在下方对所有组件判断如果有 Ref，进行 Ref 的赋值。
+      //   原生DOM组件，就会将真实DOM节点赋值给ref.current
+      //   类组件，就会将实例instance赋值给ref.current
+      // 实际上就是取 fiber.stateNode 的值。
       // fiber.stateNode 就是 dom。
       // 只有 虚拟 Fiber HostRoot 的 stateNode 指向的是 FiberRootNode
       commitLayoutEffects(finishedWork, root, lanes)
@@ -31416,6 +31498,9 @@
     return null
   }
 
+  /**
+   * @desc 执行 useEffect 的卸载和挂载
+   */
   function flushPassiveEffects() {
     // Returns whether passive effects were flushed.
     // TODO: Combine this check with the one in flushPassiveEFfectsImpl. We should
@@ -31455,7 +31540,9 @@
       }
     }
   }
-
+  /**
+   * @desc 执行 useEffect 的卸载和挂载
+   */
   function flushPassiveEffectsImpl() {
     if (rootWithPendingPassiveEffects === null) {
       return false
