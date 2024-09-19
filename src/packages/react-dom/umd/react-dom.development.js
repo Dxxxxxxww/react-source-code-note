@@ -14988,6 +14988,9 @@
       }
     }
   }
+  /**
+   * @desc 不管是初始化挂载，还是更新，都是通过 readContext 来读取 context 的值。并创建 context 单向链表绑定到 fiber.dependencies 上，在 beginWork 中给 provider case 使用。
+   */
   function readContext(context) {
     {
       // This warning would fire if you read context inside a Hook like useMemo.
@@ -19531,7 +19534,7 @@
   }
 
   /**
-   * @desc 创建 hook 对象，并挂到 fiber 上，形成链表
+   * @desc 创建 hook 对象，并挂到 fiber.memoizedState 上，形成单向链表
    */
   function mountWorkInProgressHook() {
     var hook = {
@@ -20131,6 +20134,7 @@
       currentlyRenderingFiber$1,
       queue
     ))
+    // 状态存在 hook.memoizedState 上
     return [hook.memoizedState, dispatch]
   }
 
@@ -20142,11 +20146,18 @@
     return rerenderReducer(basicStateReducer)
   }
 
+  /**
+   * @desc 创建 effect 对象并挂到 updateQueue.lastEffect 上，形成环形链表
+   */
   function pushEffect(tag, create, destroy, deps) {
     var effect = {
+      // 带有 Passive 标记的常量
       tag: tag,
+      // 传入的函数
       create: create,
+      // 传入函数的返回值，销毁函数
       destroy: destroy,
+      // 依赖
       deps: deps,
       // Circular
       next: null,
@@ -20197,10 +20208,20 @@
     return hook.memoizedState
   }
 
+  /**
+   * @param {*} fiberFlags 给 fiber 节点打的标记
+   * @param {*} hookFlags hook 的标记
+   * @param {*} create 传入的回调函数
+   * @param {*} deps 依赖
+   */
   function mountEffectImpl(fiberFlags, hookFlags, create, deps) {
+    // 创建 hook 对象，挂到 fiber 上
     var hook = mountWorkInProgressHook()
     var nextDeps = deps === undefined ? null : deps
+    // 打上标记，标记可能为 Passive ，LayoutStatic，等等就是 effect 的类别
     currentlyRenderingFiber$1.flags |= fiberFlags
+    // 挂到链表上
+    // 可以看出， effect 不仅会挂在 fiber 的 hook 链表上，还会创建 effect 对象，挂到 updateQueue.lastEffect 上形成环形链表
     hook.memoizedState = pushEffect(
       HasEffect | hookFlags,
       create,
@@ -20221,6 +20242,7 @@
       if (nextDeps !== null) {
         var prevDeps = prevEffect.deps
 
+        // 依赖一致，标记不打上 HasEffect，在 commit 阶段 commitHookEffectListMount 中就会判断不执行了
         if (areHookInputsEqual(nextDeps, prevDeps)) {
           hook.memoizedState = pushEffect(hookFlags, create, destroy, nextDeps)
           return
@@ -20246,6 +20268,7 @@
         deps
       )
     } else {
+      // 传入 Passive 标记
       return mountEffectImpl(Passive | PassiveStatic, Passive$1, create, deps)
     }
   }
@@ -22076,6 +22099,10 @@
     return update
   }
 
+  /**
+   * @desc 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
+
+   */
   function attachWakeableListeners(suspenseBoundary, root, wakeable, lanes) {
     // Attach a ping listener
     //
@@ -22109,6 +22136,8 @@
       if (!threadIDs.has(lanes)) {
         // Memoize using the thread ID to prevent redundant listeners.
         threadIDs.add(lanes)
+        // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
+
         var ping = pingSuspendedRoot.bind(null, root, wakeable, lanes)
 
         {
@@ -22318,6 +22347,7 @@
       }
     }
 
+    // 判断是否为 promise
     if (
       value !== null &&
       typeof value === 'object' &&
@@ -22338,6 +22368,7 @@
           root,
           rootRenderLanes
         )
+        // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
         attachWakeableListeners(
           suspenseBoundary,
           root,
@@ -24457,13 +24488,18 @@
       workInProgress.flags |= Placement
     }
 
+    // lazy 的组件一般没有 props
     var props = workInProgress.pendingProps
+    // 获取 vdom ，从 vdom 上获取相应的属性
     var lazyComponent = elementType
     var payload = lazyComponent._payload
     var init = lazyComponent._init
+    // 执行 lazyInitializer，第一次执行会 throw 异常，在 handleError 中捕获。
+    // 等 promise 结束后，会直接返回组件结果
     var Component = init(payload) // Store the unwrapped component in the type.
 
     workInProgress.type = Component
+    // 判断 lazy 的 fiber 类型，
     var resolvedTag = (workInProgress.tag = resolveLazyComponentTag(Component))
     var resolvedProps = resolveDefaultProps(Component, props)
     var child
@@ -26600,6 +26636,7 @@
       // 异步组件
       case LazyComponent: {
         var elementType = workInProgress.elementType
+        // 主要就是执行 lazy 的 lazyInitializer 函数，在初次执行时会抛出异常，跳出本次 render，进入 handleError 中
         return mountLazyComponent(
           current,
           workInProgress,
@@ -27317,7 +27354,7 @@
 
   /**
    * @desc 执行 effect
-   * @param flags 判断是 useEffect 还是 useLayoutEffect
+   * @param flags 各种 effect 的类型标记 | HasEffect 的结果 ，作为 effect 的区分和 effect 是否执行的标记
    * @param finishedWork
    */
   function commitHookEffectListMount(flags, finishedWork) {
@@ -27332,6 +27369,8 @@
       var effect = firstEffect
 
       do {
+        // 如果 effect tag 上没有 HasEffect 则不执行 effect create
+        // 在 effect update 时如果依赖一致，则不会给 effect 对象打上 HasEffect
         if ((effect.tag & flags) === flags) {
           {
             if ((flags & Passive$1) !== NoFlags$1) {
@@ -30214,7 +30253,12 @@
       : renderRootSync(root, lanes)
 
     // 状态不等于渲染中
-    if (exitStatus !== RootIncomplete) {
+    // 补充 18.3 代码
+    // lazy 组件 case ， 不执行 commit 阶段
+    if (exitStatus === RootDidNotComplete) {
+      markRootSuspended$1()
+      // 改为 else if
+    } else if (exitStatus !== RootIncomplete) {
       // 渲染错误case
       if (exitStatus === RootErrored) {
         // If something threw an error, try rendering one more time. We'll
@@ -30791,6 +30835,8 @@
           }
         }
 
+        // 1. 给 fiber 打上 Incomplete 的标记，会不执行 completeWork
+        // 2. 最终会重启 render
         throwException(
           root,
           erroredWork.return,
@@ -30798,6 +30844,11 @@
           thrownValue,
           workInProgressRootRenderLanes
         )
+        // 提前进入 commit 阶段
+        // 由于 fiber 标记为 Incomplete ， 则不进行 completeWork ,
+        // 最终执行 workInProgressRootExitStatus = RootDidNotComplete
+        // 在 performConcurrentWorkOnRoot 中判断全局状态为 RootDidNotComplete 而不执行 commit 阶段
+        // 导致本次 render 直接结束。会在上面 throwException 中监听 promise 变化从而重启 render
         completeUnitOfWork(erroredWork)
       } catch (yetAnotherThrownValue) {
         // Something in the return path also threw.
@@ -31150,6 +31201,11 @@
           returnFiber.flags |= Incomplete
           returnFiber.subtreeFlags = NoFlags
           returnFiber.deletions = null
+        } else {
+          // 补充 18.3 代码
+          workInProgressRootExitStatus = RootDidNotComplete
+          workInProgress = null
+          return
         }
       }
 
@@ -31277,9 +31333,12 @@
     ) {
       if (!rootDoesHavePassiveEffects) {
         rootDoesHavePassiveEffects = true
+        // useEffect 执行
+        // useEffect 执行
+        // useEffect 执行
         // 使用 schedule 来调用 useEffect
         // NormalPriority = 3 对应优先级时间 NORMAL_PRIORITY_TIMEOUT 5000
-        // 5s，这等过期会不会太久了？
+        // 5s，这等过期会不会太久了，确实没等 5s 这里 NormalPriority 不懂怎么计算的
         scheduleCallback$1(NormalPriority, function () {
           flushPassiveEffects() // This render triggered passive effects: release the root cache pool
           // *after* passive effects fire to avoid freeing a cache pool that may
@@ -31708,6 +31767,9 @@
       )
     }
   }
+  /**
+   * @desc 重新发起调度 ensureRootIsScheduled 重新 render
+   */
   function pingSuspendedRoot(root, wakeable, pingedLanes) {
     var pingCache = root.pingCache
 
@@ -31750,6 +31812,7 @@
       }
     }
 
+    // 重新发起调度 ensureRootIsScheduled 重新 render
     ensureRootIsScheduled(root, eventTime)
   }
 

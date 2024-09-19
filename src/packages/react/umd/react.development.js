@@ -1462,6 +1462,11 @@
     return children
   }
 
+  /**
+   * @desc 本质上创建了一个数据中心
+   * @param {*} defaultValue 
+   * @returns 
+   */
   function createContext(defaultValue) {
     // TODO: Second argument used to be an optional `calculateChangedBits`
     // function. Warn to reserve for future use?
@@ -1604,6 +1609,7 @@
             payload._status === Uninitialized
           ) {
             // Transition to the next state.
+            // 标记成功，并挂上结果组件
             var resolved = payload
             resolved._status = Resolved
             resolved._result = moduleObject
@@ -1615,6 +1621,7 @@
             payload._status === Uninitialized
           ) {
             // Transition to the next state.
+            // 标记失败
             var rejected = payload
             rejected._status = Rejected
             rejected._result = error
@@ -1661,24 +1668,30 @@
         }
       }
 
+      // 返回组件
       return moduleObject.default
     } else {
+      // 首次挂载最终会走到这里，抛出一个异常，会在 renderRootSync  中，执行 workLoopSync 的循环 try catch 中捕获，执行 handleError
       throw payload._result
     }
   }
 
   function lazy(ctor) {
+    // 创建组件状态和组件函数的 payload
     var payload = {
       // We use these fields to store the result.
       _status: Uninitialized,
       _result: ctor,
     }
+    // 创建类型为 REACT_LAZY_TYPE 的 ReactElement，也就是 vdom。最终返回
     var lazyType = {
       $$typeof: REACT_LAZY_TYPE,
       _payload: payload,
+      // 关键在这里，lazyInitializer 会在 render 阶段的 beginWork/LazyComponent 中调用 mountLazyComponent 执行
       _init: lazyInitializer,
     }
 
+    // 下面不用看了，不重要
     {
       // In production, this would just set it on the object.
       var defaultProps
