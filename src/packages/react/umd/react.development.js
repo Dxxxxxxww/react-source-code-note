@@ -1593,6 +1593,11 @@
   var Resolved = 1
   var Rejected = 2
 
+  /**
+   * @desc Promise异步加载组件的初始化。lazyInitializer 会在 render 阶段的 beginWork/LazyComponent 中调用 mountLazyComponent 执行。
+   * @param payload
+   * @returns {*}
+   */
   function lazyInitializer(payload) {
     if (payload._status === Uninitialized) {
       var ctor = payload._result
