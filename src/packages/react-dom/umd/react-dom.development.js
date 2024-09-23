@@ -20126,7 +20126,7 @@
     }
     hook.queue = queue
     // currentlyRenderingFiber$1 当前 fiber
-    // 执行 dispatch 不会立即更新状态，而是会发把创建更新对象，把新的值或者更新函数保存在对象上，放入更新队列中，
+    // 执行 dispatch 不会立即更新状态，而是会创建更新对象，把新的值或者更新函数保存在对象上，放入更新队列中，
     // 最后起一个调度，在 update 中从队列中拿出对象来进行状态更新
     // 在 update 中会遍历更新队列对象中保存的链表，执行所有的更新操作，返回一个最终的状态
     var dispatch = (queue.dispatch = dispatchSetState.bind(
@@ -31338,7 +31338,10 @@
         // useEffect 执行
         // 使用 schedule 来调用 useEffect
         // NormalPriority = 3 对应优先级时间 NORMAL_PRIORITY_TIMEOUT 5000
-        // 5s，这等过期会不会太久了，确实没等 5s 这里 NormalPriority 不懂怎么计算的
+        // 5s，workLoop 中判断是否 break 有两个条件，
+        // 1. 任务没过期 且
+        // 2. shuldYield ，也就是执行超过 5ms
+        // 所以即便 effect 还没过期，但是已经在堆顶了，也可能执行
         scheduleCallback$1(NormalPriority, function () {
           flushPassiveEffects() // This render triggered passive effects: release the root cache pool
           // *after* passive effects fire to avoid freeing a cache pool that may
@@ -34209,6 +34212,7 @@
     )
     markContainerAsRoot(root.current, container) // This can't be a comment node since hydration doesn't work on comment nodes anyway.
 
+    // 监听事件，事件委托
     listenToAllSupportedEvents(container)
 
     if (mutableSources) {
