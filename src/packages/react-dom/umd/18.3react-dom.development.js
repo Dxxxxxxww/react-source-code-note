@@ -19289,6 +19289,7 @@
   }
 
   function updateMemoComponent(current, workInProgress, Component, nextProps, renderLanes) {
+    // 挂载阶段。memo 重要的还是更新阶段
     if (current === null) {
       var type = Component.type;
 
@@ -19353,6 +19354,7 @@
       }
     }
 
+    // 总是只有一个子节点，因为子节点是我们传入的组件函数
     var currentChild = current.child; // This is always exactly one child
 
     var hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(current, renderLanes);
@@ -19360,12 +19362,16 @@
     if (!hasScheduledUpdateOrContext) {
       // This will be the props with resolved defaultProps,
       // unlike current.memoizedProps which will be the unresolved ones.
+      // 获取之前的 props
       var prevProps = currentChild.memoizedProps; // Default to shallow comparison
 
+      // 没有传入自定义比较函数则默认使用浅比较。
       var compare = Component.compare;
+      // shallowEqual 使用 Object.is 来浅比较
       compare = compare !== null ? compare : shallowEqual;
 
       if (compare(prevProps, nextProps) && current.ref === workInProgress.ref) {
+        // 如果返回true就直接返回已有的fiber节点，而不用重新执行子树的render过程
         return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
       }
     } // React DevTools reads this flag.
@@ -21700,6 +21706,7 @@
       case ContextConsumer:
         return updateContextConsumer(current, workInProgress, renderLanes);
 
+        // memo 组件挂载更新
       case MemoComponent:
         {
           var _type2 = workInProgress.type;

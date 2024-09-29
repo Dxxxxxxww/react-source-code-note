@@ -1873,12 +1873,16 @@
       }
     }
 
+    // 创建一个类型为 REACT_MEMO_TYPE 的 ReactElement
     var elementType = {
       $$typeof: REACT_MEMO_TYPE,
+      // 组件函数
       type: type,
+      // 自定义对比函数
       compare: compare === undefined ? null : compare,
     }
 
+    // 不重要
     {
       var ownName
       Object.defineProperty(elementType, 'displayName', {
