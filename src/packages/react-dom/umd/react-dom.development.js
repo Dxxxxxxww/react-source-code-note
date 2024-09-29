@@ -7370,6 +7370,13 @@
     }
   }
 
+  /**
+   * @desc 事件触发器，所有事件都会在 #root 上触发该函数  这个函数看 18.3的
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags
+   * @param targetContainer 应用根节点 #root
+   * @param nativeEvent 原生事件对象
+   */
   function dispatchEvent(
     domEventName,
     eventSystemFlags,
@@ -13338,6 +13345,7 @@
   }
 
   var randomKey = Math.random().toString(36).slice(2)
+  // 在 dom 上绑定 fiber 用的 key
   var internalInstanceKey = '__reactFiber$' + randomKey
   var internalPropsKey = '__reactProps$' + randomKey
   var internalContainerInstanceKey = '__reactContainer$' + randomKey
@@ -13354,7 +13362,7 @@
     delete node[internalEventHandlesSetKey]
   }
   /**
-   * @desc 将 fiber 节点挂到 dom 上
+   * @desc 将 fiber 节点挂到 dom 的 [internalInstanceKey] 属性上
    * @param {*} hostInst
    * @param {*} node
    */
@@ -22146,7 +22154,7 @@
             restorePendingUpdaters(root, lanes)
           }
         }
-
+        // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
         wakeable.then(ping, ping)
       }
     } // Retry listener
@@ -22357,10 +22365,12 @@
       var wakeable = value
       resetSuspendedComponent(sourceFiber)
 
+      // 如果上层有 Suspense 组件包裹。遍历祖先节点，看是否有 Suspense 类型的 fiber
       var suspenseBoundary = getNearestSuspenseBoundaryToCapture(returnFiber)
 
       if (suspenseBoundary !== null) {
         suspenseBoundary.flags &= ~ForceClientRender
+        // 上层有 Suspense 组件的话，就给 suspenseBoundary 打上标记 ShouldCapture
         markSuspenseBoundaryShouldCapture(
           suspenseBoundary,
           returnFiber,
@@ -22916,6 +22926,7 @@
           } else {
             // 在 completeWork 中创建 dom
             // 内部调用 createElement
+            // 让 fiber 和 dom 节点互相应用 fiber.stateNode = dom   dom[internalInstanceKey] = fiber
             var instance = createInstance(
               type,
               newProps,
@@ -24499,11 +24510,12 @@
     var Component = init(payload) // Store the unwrapped component in the type.
 
     workInProgress.type = Component
-    // 判断 lazy 的 fiber 类型，
+    // 判断 lazy 组件是什么类型的组件，并设置到 workInProgress.tag 上
     var resolvedTag = (workInProgress.tag = resolveLazyComponentTag(Component))
     var resolvedProps = resolveDefaultProps(Component, props)
     var child
 
+    // 根据组件类型，执行组件函数或者组件类代码
     switch (resolvedTag) {
       case FunctionComponent: {
         {
@@ -24512,6 +24524,7 @@
             resolveFunctionForHotReloading(Component)
         }
 
+        // 最终会执行 renderWithHook
         child = updateFunctionComponent(
           null,
           workInProgress,
@@ -25043,9 +25056,11 @@
       }
 
       var nextPrimaryChildren = nextProps.children
+      // 获取 Suspense 组件上的 fallback 后备显示属性
       var nextFallbackChildren = nextProps.fallback
 
       if (showFallback) {
+        // 渲染后备内容
         var fallbackFragment = mountSuspenseFallbackChildren(
           workInProgress,
           nextPrimaryChildren,
@@ -25083,6 +25098,8 @@
         workInProgress.lanes = SomeRetryLane
         return _fallbackFragment
       } else {
+        // 渲染子组件，比如说 Lazy 加载完成后的组件
+        // 在首次挂载时，会先创建一个 Offscreen 的 fiber 节点
         return mountSuspensePrimaryChildren(workInProgress, nextPrimaryChildren)
       }
     } else {
@@ -26695,6 +26712,7 @@
       case HostText:
         return updateHostText$1(current, workInProgress)
 
+      // Suspense 组件
       case SuspenseComponent:
         return updateSuspenseComponent(current, workInProgress, renderLanes)
 
@@ -26893,6 +26911,8 @@
         var _flags2 = workInProgress.flags
 
         if (_flags2 & ShouldCapture) {
+          // 在 handleError 中 throwException 会给 suspenseBoundary 组件打上 ShouldCapture
+          // 于是在 unwindWork 中会打上
           workInProgress.flags = (_flags2 & ~ShouldCapture) | DidCapture // Captured a suspense effect. Re-render the boundary.
 
           if ((workInProgress.mode & ProfileMode) !== NoMode) {
@@ -30252,13 +30272,8 @@
       ? renderRootConcurrent(root, lanes)
       : renderRootSync(root, lanes)
 
-    // 状态不等于渲染中
-    // 补充 18.3 代码
-    // lazy 组件 case ， 不执行 commit 阶段
-    if (exitStatus === RootDidNotComplete) {
-      markRootSuspended$1()
-      // 改为 else if
-    } else if (exitStatus !== RootIncomplete) {
+      // lazy 处理这部分还是看 18.3
+      if (exitStatus !== RootIncomplete) {
       // 渲染错误case
       if (exitStatus === RootErrored) {
         // If something threw an error, try rendering one more time. We'll
@@ -30775,6 +30790,11 @@
     }
   }
 
+  /**
+   * @desc workLoopSync 和 workLoopConcurrent 的 error catch 处理。其中会处理 Lazy 抛出的异常
+   * @param root
+   * @param thrownValue
+   */
   function handleError(root, thrownValue) {
     do {
       var erroredWork = workInProgress
@@ -30834,8 +30854,9 @@
             )
           }
         }
+        // 在 beginWork mountLazyComponent 中执行 lazyInitializer 。接收到抛出的异常后进入这里
 
-        // 1. 给 fiber 打上 Incomplete 的标记，会不执行 completeWork
+        // 1. 给 fiber 打上 Incomplete 的标记，在 completeUnitOfWork 判断就会不执行 completeWork
         // 2. 最终会重启 render
         throwException(
           root,
@@ -30844,7 +30865,7 @@
           thrownValue,
           workInProgressRootRenderLanes
         )
-        // 提前进入 commit 阶段
+        // 提前进入 completeWork
         // 由于 fiber 标记为 Incomplete ， 则不进行 completeWork ,
         // 最终执行 workInProgressRootExitStatus = RootDidNotComplete
         // 在 performConcurrentWorkOnRoot 中判断全局状态为 RootDidNotComplete 而不执行 commit 阶段
@@ -30988,6 +31009,7 @@
         workLoopSync()
         break
       } catch (thrownValue) {
+        // 需要注意的是，handleError 执行完后，还会继续 while 循环，只有 workInProgress 为 null 时才会停止
         handleError(root, thrownValue)
       }
     } while (true)
@@ -31145,6 +31167,7 @@
       var current = completedWork.alternate
       var returnFiber = completedWork.return // Check if the work completed or if something threw.
 
+      // 标记为 Incomplete 的就不会进入 if 分支
       if ((completedWork.flags & Incomplete) === NoFlags) {
         setCurrentFiber(completedWork)
         var next = void 0
@@ -31202,7 +31225,8 @@
           returnFiber.subtreeFlags = NoFlags
           returnFiber.deletions = null
         } else {
-          // 补充 18.3 代码
+          // 这块还是看18.3 补充 18.3 代码
+          // 标记
           workInProgressRootExitStatus = RootDidNotComplete
           workInProgress = null
           return

@@ -3852,11 +3852,10 @@
   /**
    * Gets the target node from a native browser event by accounting for
    * inconsistencies in browser DOM APIs.
-   *
+   * @desc 就是通过事件对象获取事件发生的源DOM对象，如果是Text类型的DOM节点，那么则会获取包裹着它的父节点。
    * @param {object} nativeEvent Native browser event.
-   * @return {DOMEventTarget} Target node.
+   * @return {DOMEventTarget} Target node. e.target || e.srcElement
    */
-
   function getEventTarget(nativeEvent) {
     // Fallback to nativeEvent.srcElement for IE9
     // https://github.com/facebook/react/issues/12506
@@ -4016,6 +4015,12 @@
    */
 
 
+  /**
+   * @desc 通过 fiber 拿到 dom ，然后从 dom [internalPropsKey] 上绑定的 props 固定 key ，获取到 props ，然后拿到对应的事件函数
+   * @param inst
+   * @param registrationName
+   * @returns {*|null}
+   */
   function getListener(inst, registrationName) {
     var stateNode = inst.stateNode;
 
@@ -4024,6 +4029,7 @@
       return null;
     }
 
+    // 从 dom [internalPropsKey] 上绑定的 props 固定 key ，获取到 props ，然后拿到对应的事件函数
     var props = getFiberCurrentPropsFromNode(stateNode);
 
     if (props === null) {
@@ -4073,6 +4079,7 @@
     }
   }
 
+  // 生产环境调用 invokeGuardedCallbackProd
   var invokeGuardedCallbackImpl = invokeGuardedCallbackProd;
 
   {
@@ -4098,7 +4105,7 @@
     // DEV version of invokeGuardedCallback
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
       var fakeNode = document.createElement('react');
-
+      // 开发环境调用 invokeGuardedCallbackDev
       invokeGuardedCallbackImpl = function invokeGuardedCallbackDev(name, func, context, a, b, c, d, e, f) {
         // If document doesn't exist we know for sure we will crash in this method
         // when we call document.createEvent(). However this can cause confusing
@@ -4273,6 +4280,7 @@
    * @param {*} context The context to use when calling the function
    * @param {...*} args Arguments for function
    */
+
 
   function invokeGuardedCallbackAndCatchFirstError(name, func, context, a, b, c, d, e, f) {
     invokeGuardedCallback.apply(this, arguments);
@@ -6458,6 +6466,13 @@
     }
   }
 
+  /**
+   * @desc 事件触发器，所有事件都会在 #root 上触发该函数
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param targetContainer 应用根节点 #root
+   * @param nativeEvent 原生事件对象
+   */
   function dispatchEvent(domEventName, eventSystemFlags, targetContainer, nativeEvent) {
     if (!_enabled) {
       return;
@@ -6468,10 +6483,19 @@
     }
   }
 
+  /**
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param targetContainer 应用根节点 #root
+   * @param nativeEvent 原生事件对象
+   */
   function dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay(domEventName, eventSystemFlags, targetContainer, nativeEvent) {
+    // 寻找事件源 fiber，通过事件对象获取事件发生的源DOM对象  e.target || e.srcElement ,
+    // 找到后赋值给全局变量 return_targetInst 并返回 null
     var blockedOn = findInstanceBlockingEvent(domEventName, eventSystemFlags, targetContainer, nativeEvent);
 
     if (blockedOn === null) {
+      // 主要看这个，执行了事件插件系统
       dispatchEventForPluginEventSystem(domEventName, eventSystemFlags, nativeEvent, return_targetInst, targetContainer);
       clearIfContinuousEvent(domEventName, nativeEvent);
       return;
@@ -6515,17 +6539,28 @@
     } // This is not replayable so we'll invoke it but without a target,
     // in case the event system needs to trace it.
 
-
+    // 主要看这个函数调用
     dispatchEventForPluginEventSystem(domEventName, eventSystemFlags, nativeEvent, null, targetContainer);
   }
 
   var return_targetInst = null; // Returns a SuspenseInstance or Container if it's blocked.
   // The return_targetInst field above is conceptually part of the return value.
 
+  /**
+   * @desc 通过 e.target 这个 dom 来找到对应的 fiber , 找到后赋值给全局变量 return_targetInst 并返回 null
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param targetContainer 应用根节点 #root
+   * @param nativeEvent 原生事件对象
+   * @returns {*|null}
+   */
   function findInstanceBlockingEvent(domEventName, eventSystemFlags, targetContainer, nativeEvent) {
     // TODO: Warn if _enabled is false.
     return_targetInst = null;
+    // 就是通过事件对象获取事件发生的源DOM对象  e.target || e.srcElement
     var nativeEventTarget = getEventTarget(nativeEvent);
+    // 通过在 completeWork 中建立的 fiber 和 dom 的互相应用的 key
+    // 来通过 dom 找到对应的 fiber
     var targetInst = getClosestInstanceFromNode(nativeEventTarget);
 
     if (targetInst !== null) {
@@ -8852,7 +8887,18 @@
     registerSimpleEvent(TRANSITION_END, 'onTransitionEnd');
   }
 
+  /**
+   * @desc 从事件触发节点向上收集，用于模拟冒泡
+   * @param dispatchQueue 冒泡队列
+   * @param domEventName 原生事件名
+   * @param targetInst e.target 对应的 fiber || null
+   * @param nativeEvent 原生事件对象 e
+   * @param nativeEventTarget 事件发生的源DOM对象  e.target || e.srcElement
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param targetContainer 应用根节点 #root 但是 extractEvents$5 中调用时没有传递
+   */
   function extractEvents$4(dispatchQueue, domEventName, targetInst, nativeEvent, nativeEventTarget, eventSystemFlags, targetContainer) {
+    // react 中的事件名，例如 onClick
     var reactName = topLevelEventsToReactNames.get(domEventName);
 
     if (reactName === undefined) {
@@ -8862,6 +8908,7 @@
     var SyntheticEventCtor = SyntheticEvent;
     var reactEventType = domEventName;
 
+    // 根据原生事件名找到 react 中的合成事件构造函数，在下面通过 new 来创建 react 中的 合成事件
     switch (domEventName) {
       case 'keypress':
         // Firefox creates a keypress event for function keys too. This removes
@@ -8970,6 +9017,7 @@
         break;
     }
 
+    // 是否是捕获事件
     var inCapturePhase = (eventSystemFlags & IS_CAPTURE_PHASE) !== 0;
 
     {
@@ -8983,12 +9031,16 @@
       // This is a breaking change that can wait until React 18.
       domEventName === 'scroll';
 
+      // nativeEvent.type  === e.type 就是事件名
+      // 从触发事件的节点一层一层往父级遍历fiber，收集每个节点绑定的事件函数。如 onClick={handleClick} 中的 handleClick
+      // 会对 handleClick 进行包装再收集
       var _listeners = accumulateSinglePhaseListeners(targetInst, reactName, nativeEvent.type, inCapturePhase, accumulateTargetOnly);
 
       if (_listeners.length > 0) {
         // Intentionally create event lazily.
+        // 创建对应的合成事件对象
         var _event = new SyntheticEventCtor(reactName, reactEventType, null, nativeEvent, nativeEventTarget);
-
+        // 收集到 dispatchEventsForPlugins 传过来的队列中
         dispatchQueue.push({
           event: _event,
           listeners: _listeners
@@ -9004,6 +9056,16 @@
   registerEvents$3();
   registerEvents();
 
+  /**
+   * @desc 从事件触发节点向上收集，用于模拟冒泡
+   * @param dispatchQueue 冒泡队列
+   * @param domEventName 原生事件名
+   * @param targetInst e.target 对应的 fiber || null
+   * @param nativeEvent 原生事件对象 e
+   * @param nativeEventTarget 事件发生的源DOM对象  e.target || e.srcElement
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param targetContainer 应用根节点 #root 但是 dispatchEventsForPlugins 中调用时没有传递
+   */
   function extractEvents$5(dispatchQueue, domEventName, targetInst, nativeEvent, nativeEventTarget, eventSystemFlags, targetContainer) {
     // TODO: we should remove the concept of a "SimpleEventPlugin".
     // This is the basic functionality of the event system. All
@@ -9011,6 +9073,7 @@
     // should probably be inlined somewhere and have its logic
     // be core the to event system. This would potentially allow
     // us to ship builds of React without the polyfilled plugins below.
+    // 收集事件
     extractEvents$4(dispatchQueue, domEventName, targetInst, nativeEvent, nativeEventTarget, eventSystemFlags);
     var shouldProcessPolyfillPlugins = (eventSystemFlags & SHOULD_NOT_PROCESS_POLYFILL_EVENT_PLUGINS) === 0; // We don't process these events unless we are in the
     // event's native "bubble" phase, which means that we're
@@ -9045,17 +9108,32 @@
 
   var nonDelegatedEvents = new Set(['cancel', 'close', 'invalid', 'load', 'scroll', 'toggle'].concat(mediaEventTypes));
 
+  /**
+   * @desc 执行事件
+   * @param event
+   * @param listener
+   * @param currentTarget
+   */
   function executeDispatch(event, listener, currentTarget) {
     var type = event.type || 'unknown-event';
     event.currentTarget = currentTarget;
+    // 执行事件，最终调用 invokeGuardedCallbackProd 来执行
     invokeGuardedCallbackAndCatchFirstError(type, listener, undefined, event);
     event.currentTarget = null;
   }
 
+  /**
+   * 遍历执行事件, 模拟捕获，冒泡
+   * @param event
+   * @param dispatchListeners
+   * @param inCapturePhase
+   */
   function processDispatchQueueItemsInOrder(event, dispatchListeners, inCapturePhase) {
     var previousInstance;
 
+    // 捕获
     if (inCapturePhase) {
+      // 从后往前遍历
       for (var i = dispatchListeners.length - 1; i >= 0; i--) {
         var _dispatchListeners$i = dispatchListeners[i],
             instance = _dispatchListeners$i.instance,
@@ -9070,6 +9148,8 @@
         previousInstance = instance;
       }
     } else {
+      // 冒泡
+      // 从前往后遍历
       for (var _i = 0; _i < dispatchListeners.length; _i++) {
         var _dispatchListeners$_i = dispatchListeners[_i],
             _instance = _dispatchListeners$_i.instance,
@@ -9080,12 +9160,18 @@
           return;
         }
 
+        // 执行事件
         executeDispatch(event, _listener, _currentTarget);
         previousInstance = _instance;
       }
     }
   }
 
+  /**
+   * @desc 取出每种事件的listeners列表，然后对他们进行处理
+   * @param dispatchQueue
+   * @param eventSystemFlags
+   */
   function processDispatchQueue(dispatchQueue, eventSystemFlags) {
     var inCapturePhase = (eventSystemFlags & IS_CAPTURE_PHASE) !== 0;
 
@@ -9093,6 +9179,7 @@
       var _dispatchQueue$i = dispatchQueue[i],
           event = _dispatchQueue$i.event,
           listeners = _dispatchQueue$i.listeners;
+      // 遍历执行事件
       processDispatchQueueItemsInOrder(event, listeners, inCapturePhase); //  event system doesn't use pooling.
     } // This would be a good time to rethrow if any of the event handlers threw.
 
@@ -9100,10 +9187,21 @@
     rethrowCaughtError();
   }
 
+  /**
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param nativeEvent 原生事件对象
+   * @param targetInst e.target 对应的 fiber || null
+   * @param targetContainer 应用根节点 #root
+   */
   function dispatchEventsForPlugins(domEventName, eventSystemFlags, nativeEvent, targetInst, targetContainer) {
+    // 就是通过事件对象获取事件发生的源DOM对象  e.target || e.srcElement
     var nativeEventTarget = getEventTarget(nativeEvent);
+    // 准备一个队列。每一种事件都会有自己的队列 。
     var dispatchQueue = [];
+    // 收集事件，用来模拟冒泡
     extractEvents$5(dispatchQueue, domEventName, targetInst, nativeEvent, nativeEventTarget, eventSystemFlags);
+    // 触发事件
     processDispatchQueue(dispatchQueue, eventSystemFlags);
   }
 
@@ -9207,6 +9305,13 @@
     return grandContainer === targetContainer || grandContainer.nodeType === COMMENT_NODE && grandContainer.parentNode === targetContainer;
   }
 
+  /**
+   * @param domEventName  原生事件名
+   * @param eventSystemFlags 标记，冒泡是 4，捕获是 0
+   * @param nativeEvent 原生事件对象
+   * @param targetInst e.target 对应的 fiber || null
+   * @param targetContainer 应用根节点 #root
+   */
   function dispatchEventForPluginEventSystem(domEventName, eventSystemFlags, nativeEvent, targetInst, targetContainer) {
     var ancestorInst = targetInst;
 
@@ -9294,7 +9399,9 @@
       }
     }
 
+    // 同步
     batchedUpdates(function () {
+      // 主要就是这个函数同步调用
       return dispatchEventsForPlugins(domEventName, eventSystemFlags, nativeEvent, ancestorInst);
     });
   }
@@ -9307,6 +9414,16 @@
     };
   }
 
+  /**
+   * @desc 从触发事件的节点一层一层往父级遍历fiber，收集每个节点绑定的事件函数。如 onClick={handleClick} 中的 handleClick 。
+   * 会对 handleClick 进行包装再收集
+   * @param targetFiber e.target 对应的 fiber || null
+   * @param reactName react体系下的事件名 onClick
+   * @param nativeEventType 原生事件名
+   * @param inCapturePhase 是否是捕获事件
+   * @param accumulateTargetOnly 是否只需要收集源节点的函数
+   * @param nativeEvent 原生事件对象 e 。在 extractEvents$4 中调用没传
+   */
   function accumulateSinglePhaseListeners(targetFiber, reactName, nativeEventType, inCapturePhase, accumulateTargetOnly, nativeEvent) {
     var captureName = reactName !== null ? reactName + 'Capture' : null;
     var reactEventName = inCapturePhase ? captureName : reactName;
@@ -9314,19 +9431,25 @@
     var instance = targetFiber;
     var lastHostComponent = null; // Accumulate all instances and listeners via the target -> root path.
 
+    // 从触发事件的节点一层一层往父级遍历
     while (instance !== null) {
       var _instance2 = instance,
           stateNode = _instance2.stateNode,
-          tag = _instance2.tag; // Handle listeners that are on HostComponents (i.e. <div>)
+          tag = _instance2.tag; // Handle listeners that are on HostComponents (i.e. <div>) 获取 fiber 类型
 
+      // 所有的事件必须发生在原生DOM节点上，而且这个DOM节点必须存在
       if (tag === HostComponent && stateNode !== null) {
         lastHostComponent = stateNode; // createEventHandle listeners
 
 
+        // 通过 react事件名获取事件监听函数
         if (reactEventName !== null) {
+          // 实际上是从fiber节点的props上获取对应的事件函数
+          // 通过 fiber 拿到 dom ，然后从 dom [internalPropsKey] 上绑定的 props 固定 key ，获取到 props ，然后拿到对应的事件函数
           var listener = getListener(instance, reactEventName);
 
           if (listener != null) {
+            // 对时间监听函数包装一层
             listeners.push(createDispatchListener(instance, listener, lastHostComponent));
           }
         }
@@ -18812,6 +18935,12 @@
     return update;
   }
 
+  /**
+   * @desc  监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
+   * @param root
+   * @param wakeable
+   * @param lanes
+   */
   function attachPingListener(root, wakeable, lanes) {
     // Attach a ping listener
     //
@@ -18853,6 +18982,8 @@
         }
       }
 
+      // 主要就是这一句
+      // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
       wakeable.then(ping, ping);
     }
   }
@@ -19035,6 +19166,7 @@
       }
     }
 
+    // 判断是否为 promise
     if (value !== null && typeof value === 'object' && typeof value.then === 'function') {
       // This is a wakeable. The component suspended.
       var wakeable = value;
@@ -19046,7 +19178,7 @@
         }
       }
 
-
+      // 如果上层有 Suspense 组件包裹。遍历祖先节点，看是否有 Suspense 类型的 fiber
       var suspenseBoundary = getNearestSuspenseBoundaryToCapture(returnFiber);
 
       if (suspenseBoundary !== null) {
@@ -19055,6 +19187,7 @@
         // commits fallbacks synchronously, so there are no pings.
 
         if (suspenseBoundary.mode & ConcurrentMode) {
+          // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
           attachPingListener(root, wakeable, rootRenderLanes);
         }
 
@@ -19071,6 +19204,7 @@
           // the fallbacks anyway.)
           //
           // This case also applies to initial hydration.
+          // 监听 promise 变化，重新发起调度 ensureRootIsScheduled 重新 render
           attachPingListener(root, wakeable, rootRenderLanes);
           renderDidSuspendDelayIfPossible();
           return;
@@ -25626,6 +25760,9 @@
   // root has work on. This function is called on every update, and right before
   // exiting a task.
 
+  /**
+   * @desc schedule 任务，每个并发任务的入口
+   */
   function ensureRootIsScheduled(root, currentTime) {
     var existingCallbackNode = root.callbackNode; // Check if any lanes are being starved by other work. If so, mark them as
     // expired so we know to work on those next.
@@ -25815,6 +25952,7 @@
         throw fatalError;
       }
 
+      // Lazy 处理
       if (exitStatus === RootDidNotComplete) {
         // The render unwound without completing the tree. This happens in special
         // cases where need to exit the current render without producing a
@@ -26641,6 +26779,7 @@
       var current = completedWork.alternate;
       var returnFiber = completedWork.return; // Check if the work completed or if something threw.
 
+      // 标记为 Incomplete 的就不会进入 if 分支
       if ((completedWork.flags & Incomplete) === NoFlags) {
         setCurrentFiber(completedWork);
         var next = void 0;
@@ -27262,6 +27401,7 @@
       }
     }
 
+    // 重新发起调度
     ensureRootIsScheduled(root, eventTime);
   }
 
